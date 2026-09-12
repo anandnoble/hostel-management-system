@@ -341,93 +341,9 @@ fun AdminDashboardScreen(
                         hostelId = hostels.firstOrNull()?.id ?: "",
                         modifier = Modifier.padding(16.dp)
                     )
-                } else {
-                    // Main Dashboard Content (Hidden in this new paradigm, but we can keep it as a 3rd tab if wanted. For now, replacing main dashboard with the requested views)
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        // Key metrics grid
-                        Text("System Overview", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    MetricCard(
-                        title = "Students",
-                        value = stats["totalStudents"]?.toString() ?: "0",
-                        icon = Icons.Default.People,
-                        color = Color(0xFF3F51B5),
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricCard(
-                        title = "Beds Occupied",
-                        value = "${stats["occupiedBeds"] ?: 0}/${stats["totalBeds"] ?: 0}",
-                        icon = Icons.Default.Bed,
-                        color = Color(0xFF4CAF50),
-                        modifier = Modifier.weight(1f)
-                    )
                 }
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    MetricCard(
-                        title = "Occupancy Rate",
-                        value = "${stats["occupancyPct"] ?: 0}%",
-                        icon = Icons.Default.PieChart,
-                        color = Color(0xFFFF9800),
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricCard(
-                        title = "Pending Dues",
-                        value = "₹${stats["pendingFees"] ?: 0}",
-                        icon = Icons.Default.Payments,
-                        color = Color(0xFFF44336),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Shortcuts Panel
-                Text("Quick Actions", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceAround
-                        ) {
-                            ShortcutItem("Students", Icons.Default.People, Color(0xFF3F51B5)) { onNavigate("student_list") }
-                            ShortcutItem("Rooms Grid", Icons.Default.GridOn, Color(0xFF009688)) { onNavigate("hostel_structure") }
-                            ShortcutItem("Allocations", Icons.Default.AssignmentInd, Color(0xFFE91E63)) { onNavigate("room_allocation") }
-                            ShortcutItem("Finance", Icons.Default.AccountBalanceWallet, Color(0xFF4CAF50)) { onNavigate("fees_list") }
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceAround
-                        ) {
-                            ShortcutItem("Complaints", Icons.Default.Warning, Color(0xFFF44336)) { onNavigate("complaints_list") }
-                            ShortcutItem("Announce", Icons.Default.Campaign, Color(0xFF9C27B0)) { onNavigate("announcements") }
-                            ShortcutItem("Reports", Icons.Default.Assessment, Color(0xFF673AB7)) { onNavigate("reports") }
-                            ShortcutItem("Audit Logs", Icons.Default.History, Color(0xFF607D8B)) { onNavigate("audit_logs") }
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Student Registration QR Code Card
-                StudentRegistrationQrCard(
-                    hostelId = hostels.firstOrNull()?.id ?: ""
-                )
-
-                Spacer(modifier = Modifier.height(30.dp))
             }
         }
-    }
-    }
     }
 
     if (showQrDialog) {
