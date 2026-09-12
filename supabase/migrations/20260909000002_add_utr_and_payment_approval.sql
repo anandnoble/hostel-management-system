@@ -128,3 +128,26 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION approve_student_self_registration(text, text, text, numeric) TO anon, authenticated, service_role;
+
+-- 3. Automatic Backfill: Create Paid invoices for all past approved students missing an invoice
+DO $$
+DECLARE
+    r record;
+    v_new_inv_id uuid;
+BEGIN
+    FOR r IN 
+        SELECT DISTINCT ra.student_id 
+        FROM public.room_allocations ra
+        LEFT JOIN public.invoices i ON i.student_id = ra.student_id
+        WHERE ra.status = 'Active' AND i.id IS NULL
+    LOOP
+        v_new_inv_id := uuid_generate_v4();
+        INSERT INTO public.invoices (id, student_id, billing_month, amount, balance, payment_status, due_date)
+        VALUES (v_new_inv_id, r.student_id, to_char(now(), 'FMMonth YYYY'), 5000.00, 0.00, 'Paid', CURRENT_DATE)
+        ON CONFLICT DO NOTHING;
+
+        INSERT INTO public.payments (invoice_id, amount_paid, payment_mode, notes)
+        VALUES (v_new_inv_id, 5000.00, 'UPI', 'Initial Registration Fee (Auto Backfilled)')
+        ON CONFLICT DO NOTHING;
+    END LOOP;
+END $$;
