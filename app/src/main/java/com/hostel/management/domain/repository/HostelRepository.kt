@@ -40,7 +40,7 @@ interface HostelRepository {
     
     // Self Registrations
     suspend fun getPendingSelfRegistrations(): Result<List<StudentSelfRegistration>>
-    suspend fun updateSelfRegistrationStatus(id: String, status: String): Result<Unit>
+    suspend fun updateSelfRegistrationStatus(id: String, status: String, paymentStatus: String = "Paid", amountPaid: Double = 0.0): Result<Unit>
 
     // Monthly Payment Submissions
     suspend fun getMonthlyPaymentSubmissions(): Result<List<MonthlyPaymentSubmission>>

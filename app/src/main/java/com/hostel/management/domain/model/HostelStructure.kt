@@ -109,7 +109,9 @@ data class StudentSelfRegistration(
     val bedNumber: String?,
     val status: String,
     val notes: String?,
-    val createdAt: String?
+    val createdAt: String?,
+    val utrNumber: String? = null,
+    val amountPaid: Double? = 0.0
 )
 
 data class MonthlyPaymentSubmission(

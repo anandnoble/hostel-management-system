@@ -332,6 +332,9 @@ fun NotificationsScreen(
     val pendingRegistrations by (studentViewModel?.pendingRegistrations?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
     val monthlyPaymentSubmissions by (studentViewModel?.monthlyPaymentSubmissions?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
     var selectedTab by remember { mutableStateOf(0) }
+    var selectedPaidRegistration by remember { mutableStateOf<com.hostel.management.domain.model.StudentSelfRegistration?>(null) }
+    var selectedUnpaidRegistration by remember { mutableStateOf<com.hostel.management.domain.model.StudentSelfRegistration?>(null) }
+    var manualAmountText by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -383,31 +386,192 @@ fun NotificationsScreen(
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                             items(pendingRegistrations) { reg ->
-                                Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                ) {
                                     Column(modifier = Modifier.padding(16.dp)) {
-                                        Text(text = reg.fullName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                        Text(text = "Phone: ${reg.phone}", fontSize = 14.sp)
-                                        Text(text = "Email: ${reg.email}", fontSize = 14.sp)
-                                        Text(text = "Aadhaar: ${reg.aadhaarNumber ?: "N/A"}", fontSize = 14.sp)
-                                        Text(text = "Requested Bed: ${reg.bedNumber ?: "Unassigned"}", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Button(
-                                                onClick = { studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved") },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
-                                            ) {
-                                                Text("Approve")
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = reg.fullName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                            Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) {
+                                                Text(reg.status, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
-                                            OutlinedButton(
-                                                onClick = { studentViewModel?.updateSelfRegistrationStatus(reg.id, "Rejected") }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(text = "📱 Phone: ${reg.phone ?: "N/A"} • Email: ${reg.email}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = "🆔 Aadhaar: ${reg.aadhaarNumber ?: "N/A"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = "🛏️ Requested Room/Bed: ${reg.roomNumber ?: ""} ${reg.bedNumber ?: "Unassigned"}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        
+                                        // UTR Number & Amount Highlight Box
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("Reject")
+                                                Column {
+                                                    Text(text = "💳 UTR / Ref Number", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                                    Text(
+                                                        text = reg.utrNumber ?: "Not Provided",
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (reg.utrNumber != null) MaterialTheme.colorScheme.primary else Color.Gray
+                                                    )
+                                                }
+                                                if (reg.amountPaid != null && reg.amountPaid > 0) {
+                                                    Column(horizontalAlignment = Alignment.End) {
+                                                        Text(text = "Submitted Amount", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                                        Text(text = "₹${reg.amountPaid.toInt()}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        // Approval Buttons
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    manualAmountText = if (reg.amountPaid != null && reg.amountPaid > 0) reg.amountPaid.toInt().toString() else "5000"
+                                                    selectedPaidRegistration = reg
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                                                modifier = Modifier.weight(1.2f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(vertical = 8.dp)
+                                            ) {
+                                                Text("✓ Paid & Accept", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            Button(
+                                                onClick = {
+                                                    manualAmountText = "0"
+                                                    selectedUnpaidRegistration = reg
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                                modifier = Modifier.weight(1.3f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(vertical = 8.dp)
+                                            ) {
+                                                Text("! Not Paid & Accept", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = { studentViewModel?.updateSelfRegistrationStatus(reg.id, "Rejected") },
+                                                modifier = Modifier.weight(0.9f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(vertical = 8.dp)
+                                            ) {
+                                                Text("Reject", fontSize = 11.sp)
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+
+                    // PAID & ACCEPT CONFIRMATION DIALOG
+                    if (selectedPaidRegistration != null) {
+                        val reg = selectedPaidRegistration!!
+                        AlertDialog(
+                            onDismissRequest = { selectedPaidRegistration = null },
+                            title = { Text("Approve & Mark Paid (Green Bed)") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Student: ${reg.fullName}", fontWeight = FontWeight.Bold)
+                                    Text("Bed: ${reg.roomNumber ?: ""} ${reg.bedNumber ?: ""}")
+                                    Text("UTR Number: ${reg.utrNumber ?: "N/A"}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Type or confirm amount paid by student:", fontSize = 12.sp, color = Color.Gray)
+                                    OutlinedTextField(
+                                        value = manualAmountText,
+                                        onValueChange = { manualAmountText = it },
+                                        label = { Text("Amount Paid (₹)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val amt = manualAmountText.toDoubleOrNull() ?: 5000.0
+                                        studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved", paymentStatus = "Paid", amountPaid = amt)
+                                        selectedPaidRegistration = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                                ) {
+                                    Text("Confirm & Mark Green (Paid)")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { selectedPaidRegistration = null }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
+
+                    // NOT PAID & ACCEPT CONFIRMATION DIALOG
+                    if (selectedUnpaidRegistration != null) {
+                        val reg = selectedUnpaidRegistration!!
+                        AlertDialog(
+                            onDismissRequest = { selectedUnpaidRegistration = null },
+                            title = { Text("Approve & Mark Unpaid (Red Bed)") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Student: ${reg.fullName}", fontWeight = FontWeight.Bold)
+                                    Text("Bed: ${reg.roomNumber ?: ""} ${reg.bedNumber ?: ""}")
+                                    Text("UTR Number: ${reg.utrNumber ?: "N/A"}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Student will be assigned to bed with PENDING fee invoice.", fontSize = 12.sp, color = Color.Gray)
+                                    OutlinedTextField(
+                                        value = manualAmountText,
+                                        onValueChange = { manualAmountText = it },
+                                        label = { Text("Amount Paid So Far (₹)") },
+                                        placeholder = { Text("0") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val amt = manualAmountText.toDoubleOrNull() ?: 0.0
+                                        studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved", paymentStatus = "Pending", amountPaid = amt)
+                                        selectedUnpaidRegistration = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                                ) {
+                                    Text("Confirm & Mark Red (Unpaid)")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { selectedUnpaidRegistration = null }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
                     }
                 }
                 1 -> {

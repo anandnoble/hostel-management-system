@@ -227,7 +227,9 @@ data class StudentSelfRegistrationDto(
     @SerialName("bed_number") val bedNumber: String? = null,
     val status: String = "Pending",
     val notes: String? = null,
-    @SerialName("created_at") val createdAt: String? = null
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("utr_number") val utrNumber: String? = null,
+    @SerialName("amount_paid") val amountPaid: Double? = 0.0
 )
 
 @Serializable

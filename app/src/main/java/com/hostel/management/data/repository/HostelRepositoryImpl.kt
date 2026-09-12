@@ -906,6 +906,16 @@ class HostelRepositoryImpl(
             .select { filter { eq("status", "Pending") } }
             .decodeList<StudentSelfRegistrationDto>()
         dtos.map { dto ->
+            val extractedUtr = dto.utrNumber ?: run {
+                val notes = dto.notes ?: ""
+                val utrMatch = Regex("UTR:\\s*([^\\s|]+)").find(notes)
+                utrMatch?.groupValues?.get(1)
+            }
+            val extractedAmount = if (dto.amountPaid != null && dto.amountPaid > 0) dto.amountPaid else run {
+                val notes = dto.notes ?: ""
+                val amtMatch = Regex("Advance:\\s*₹?\\s*([0-9.]+)").find(notes)
+                amtMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            }
             StudentSelfRegistration(
                 id = dto.id,
                 hostelId = dto.hostelId,
@@ -918,34 +928,48 @@ class HostelRepositoryImpl(
                 bedNumber = dto.bedNumber,
                 status = dto.status,
                 notes = dto.notes,
-                createdAt = dto.createdAt
+                createdAt = dto.createdAt,
+                utrNumber = extractedUtr,
+                amountPaid = extractedAmount
             )
         }
     }
 
-    override suspend fun updateSelfRegistrationStatus(id: String, status: String): Result<Unit> = runCatching {
-        // 1. Try SECURITY DEFINER RPC first (guarantees bypass of RLS issues & allocates bed in DB)
+    override suspend fun updateSelfRegistrationStatus(
+        id: String,
+        status: String,
+        paymentStatus: String,
+        amountPaid: Double
+    ): Result<Unit> = runCatching {
+        // 1. Try SECURITY DEFINER RPC first (allocates bed, creates profile & invoice in DB)
         try {
             val params = buildJsonObject {
                 put("p_reg_id", id)
                 put("p_status", status)
+                put("p_payment_status", paymentStatus)
+                put("p_amount_paid", amountPaid)
             }
             supabaseClient.postgrest.rpc("approve_student_self_registration", params)
         } catch (e: Exception) {
             println("RPC approve_student_self_registration note: ${e.message}")
         }
 
-        // 2. Fallback: Direct PostgREST table update
-        val updatePayload = buildJsonObject {
-            put("status", status)
-        }
-        supabaseClient.postgrest.from("student_self_registrations").update(updatePayload) {
-            filter { eq("id", id) }
+        // 2. Direct PostgREST table update fallback
+        try {
+            val updatePayload = buildJsonObject {
+                put("status", status)
+                if (amountPaid > 0) put("amount_paid", amountPaid)
+            }
+            supabaseClient.postgrest.from("student_self_registrations").update(updatePayload) {
+                filter { eq("id", id) }
+            }
+        } catch (e: Exception) {
+            println("Direct update note: ${e.message}")
         }
 
-        // 3. Trigger auto sync to fetch updated bed statuses & allocations from Supabase into local Room DB
+        // 3. Force cloud pull to update local DB with created invoices & bed allocations
         try {
-            syncManager.triggerAutoSyncIfEnabled()
+            syncManager.pullCloudToLocal()
         } catch (e: Exception) {
             println("Sync after approval note: ${e.message}")
         }

@@ -50,9 +50,15 @@ class StudentViewModel(
         }
     }
 
-    fun updateSelfRegistrationStatus(id: String, status: String, onSuccess: () -> Unit) {
+    fun updateSelfRegistrationStatus(
+        id: String,
+        status: String,
+        paymentStatus: String = "Paid",
+        amountPaid: Double = 0.0,
+        onSuccess: () -> Unit = {}
+    ) {
         viewModelScope.launch {
-            hostelRepository.updateSelfRegistrationStatus(id, status)
+            hostelRepository.updateSelfRegistrationStatus(id, status, paymentStatus, amountPaid)
                 .onSuccess {
                     loadPendingRegistrations()
                     onSuccess()
@@ -60,7 +66,7 @@ class StudentViewModel(
         }
     }
 
-    fun verifyMonthlyPayment(id: String, status: String, onSuccess: () -> Unit) {
+    fun verifyMonthlyPayment(id: String, status: String, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
             hostelRepository.verifyMonthlyPayment(id, status)
                 .onSuccess {
