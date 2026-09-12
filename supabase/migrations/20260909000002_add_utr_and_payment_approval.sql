@@ -3,6 +3,11 @@
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Ensure students table has aadhaar_number and photo_url columns
+ALTER TABLE public.students
+    ADD COLUMN IF NOT EXISTS aadhaar_number text,
+    ADD COLUMN IF NOT EXISTS photo_url text;
+
 -- 1. Add utr_number and amount_paid columns to student_self_registrations
 ALTER TABLE public.student_self_registrations
     ADD COLUMN IF NOT EXISTS utr_number text,
@@ -85,9 +90,11 @@ BEGIN
         END IF;
 
         -- Ensure student record exists
-        INSERT INTO public.students (id, student_id_number, aadhaar_number, hostel_status)
-        VALUES (v_profile_id, v_reg.student_id_number, v_reg.aadhaar_number, 'Active'::public.hostel_status)
-        ON CONFLICT (id) DO NOTHING;
+        INSERT INTO public.students (id, student_id_number, aadhaar_number, photo_url, hostel_status)
+        VALUES (v_profile_id, COALESCE(v_reg.student_id_number, 'STU-' || substring(v_reg.id::text from 1 for 6)), v_reg.aadhaar_number, v_reg.photo_url, 'Active'::public.hostel_status)
+        ON CONFLICT (id) DO UPDATE
+        SET aadhaar_number = EXCLUDED.aadhaar_number,
+            photo_url = EXCLUDED.photo_url;
 
         -- Mark bed as Occupied & insert allocation
         IF v_bed_id IS NOT NULL THEN
