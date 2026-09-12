@@ -16,6 +16,12 @@ class StudentViewModel(
     private val _students = MutableStateFlow<List<Student>>(emptyList())
     val students: StateFlow<List<Student>> = _students.asStateFlow()
 
+    private val _pendingRegistrations = MutableStateFlow<List<com.hostel.management.domain.model.StudentSelfRegistration>>(emptyList())
+    val pendingRegistrations: StateFlow<List<com.hostel.management.domain.model.StudentSelfRegistration>> = _pendingRegistrations.asStateFlow()
+
+    private val _monthlyPaymentSubmissions = MutableStateFlow<List<com.hostel.management.domain.model.MonthlyPaymentSubmission>>(emptyList())
+    val monthlyPaymentSubmissions: StateFlow<List<com.hostel.management.domain.model.MonthlyPaymentSubmission>> = _monthlyPaymentSubmissions.asStateFlow()
+
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -24,6 +30,45 @@ class StudentViewModel(
 
     private val _selectedStudent = MutableStateFlow<Student?>(null)
     val selectedStudent: StateFlow<Student?> = _selectedStudent.asStateFlow()
+
+    fun loadPendingRegistrations() {
+        viewModelScope.launch {
+            hostelRepository.getPendingSelfRegistrations()
+                .onSuccess { list ->
+                    _pendingRegistrations.value = list
+                }
+        }
+        loadMonthlyPaymentSubmissions()
+    }
+
+    fun loadMonthlyPaymentSubmissions() {
+        viewModelScope.launch {
+            hostelRepository.getMonthlyPaymentSubmissions()
+                .onSuccess { list ->
+                    _monthlyPaymentSubmissions.value = list
+                }
+        }
+    }
+
+    fun updateSelfRegistrationStatus(id: String, status: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            hostelRepository.updateSelfRegistrationStatus(id, status)
+                .onSuccess {
+                    loadPendingRegistrations()
+                    onSuccess()
+                }
+        }
+    }
+
+    fun verifyMonthlyPayment(id: String, status: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            hostelRepository.verifyMonthlyPayment(id, status)
+                .onSuccess {
+                    loadMonthlyPaymentSubmissions()
+                    onSuccess()
+                }
+        }
+    }
 
     fun loadStudents(query: String? = null, status: String? = null) {
         _loading.value = true

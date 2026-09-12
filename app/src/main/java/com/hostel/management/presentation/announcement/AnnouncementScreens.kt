@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,7 +50,7 @@ fun AnnouncementsScreen(
                 title = { Text("Announcements") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -127,7 +128,7 @@ fun AnnouncementsScreen(
                                 )
 
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Divider()
+                                HorizontalDivider()
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 Row(
@@ -323,22 +324,29 @@ fun AnnouncementsScreen(
 @Composable
 fun NotificationsScreen(
     announcementViewModel: AnnouncementViewModel,
+    studentViewModel: com.hostel.management.presentation.student.StudentViewModel? = null,
     onNavigateBack: () -> Unit
 ) {
     val notifications by announcementViewModel.notifications.collectAsState()
     val loading by announcementViewModel.loading.collectAsState()
+    val pendingRegistrations by (studentViewModel?.pendingRegistrations?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
+    val monthlyPaymentSubmissions by (studentViewModel?.monthlyPaymentSubmissions?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
+    var selectedTab by remember { mutableStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(Unit) {
         announcementViewModel.loadNotifications()
+        studentViewModel?.loadPendingRegistrations()
+        studentViewModel?.loadMonthlyPaymentSubmissions()
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Notifications") },
+                title = { Text("Notifications & Approvals") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -350,54 +358,139 @@ fun NotificationsScreen(
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (loading && notifications.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+            val tabs = listOf("Registrations", "Monthly Fees", "System")
+            TabRow(selectedTabIndex = selectedTab) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        text = { Text(title) },
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index }
+                    )
                 }
-            } else if (notifications.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No notifications.", color = Color.Gray)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(notifications) { notif ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    announcementViewModel.markAsRead(notif.id)
-                                },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (notif.isRead) MaterialTheme.colorScheme.surface 
-                                                 else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = notif.title,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                    if (!notif.isRead) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                        )
+            }
+
+            when (selectedTab) {
+                0 -> {
+                    // Pending Registrations Tab
+                    if (loading && pendingRegistrations.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else if (pendingRegistrations.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No pending registrations.", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                            items(pendingRegistrations) { reg ->
+                                Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(text = reg.fullName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text(text = "Phone: ${reg.phone}", fontSize = 14.sp)
+                                        Text(text = "Email: ${reg.email}", fontSize = 14.sp)
+                                        Text(text = "Aadhaar: ${reg.aadhaarNumber ?: "N/A"}", fontSize = 14.sp)
+                                        Text(text = "Requested Bed: ${reg.bedNumber ?: "Unassigned"}", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(
+                                                onClick = { studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved") },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                                            ) {
+                                                Text("Approve")
+                                            }
+                                            OutlinedButton(
+                                                onClick = { studentViewModel?.updateSelfRegistrationStatus(reg.id, "Rejected") }
+                                            ) {
+                                                Text("Reject")
+                                            }
+                                        }
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(text = notif.message, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(text = notif.createdAt.take(16).replace("T", " "), fontSize = 9.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    // Monthly Fees Tab
+                    if (loading && monthlyPaymentSubmissions.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else if (monthlyPaymentSubmissions.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No pending monthly fees.", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                            items(monthlyPaymentSubmissions) { payment ->
+                                Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(text = payment.fullName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text(text = "Room: ${payment.roomNumber} - Bed: ${payment.bedNumber}", fontSize = 14.sp)
+                                        Text(text = "Month: ${payment.billingMonth}", fontSize = 14.sp)
+                                        Text(text = "Amount: ₹${payment.amount}", fontSize = 14.sp)
+                                        Text(text = "UTR: ${payment.utrNumber}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        if (payment.status == "Pending") {
+                                            Button(
+                                                onClick = { studentViewModel?.verifyMonthlyPayment(payment.id, "Verified") },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                                            ) {
+                                                Text("Verify Payment")
+                                            }
+                                        } else {
+                                            Text(text = "Status: ${payment.status}", color = Color.Gray, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    // System Notifications Tab
+                    if (loading && notifications.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else if (notifications.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No system notifications.", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                            items(notifications) { notif ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp)
+                                        .clickable { announcementViewModel.markAsRead(notif.id) },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (notif.isRead) MaterialTheme.colorScheme.surface 
+                                                         else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = notif.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            if (!notif.isRead) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(text = notif.message, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(text = notif.createdAt.take(16).replace("T", " "), fontSize = 9.sp, color = Color.Gray)
+                                    }
+                                }
                             }
                         }
                     }
@@ -426,7 +519,7 @@ fun AuditLogsScreen(
                 title = { Text("Audit Trail") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )

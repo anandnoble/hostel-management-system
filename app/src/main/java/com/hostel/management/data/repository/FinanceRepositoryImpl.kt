@@ -1,33 +1,46 @@
 package com.hostel.management.data.repository
 
-import com.hostel.management.data.dto.FeeInvoiceDto
-import com.hostel.management.data.dto.PaymentDto
-import com.hostel.management.data.dto.ProfileDto
-import com.hostel.management.data.dto.StudentDto
+import com.hostel.management.data.local.AppDatabase
+import com.hostel.management.data.local.entity.FeeInvoiceEntity
+import com.hostel.management.data.local.entity.PaymentEntity
+import com.hostel.management.data.local.entity.SyncQueueEntity
+import com.hostel.management.data.sync.SyncManager
 import com.hostel.management.domain.model.FeeInvoice
 import com.hostel.management.domain.model.Payment
 import com.hostel.management.domain.repository.FinanceRepository
 import com.hostel.management.di.ServiceLocator
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 class FinanceRepositoryImpl(
-    private val supabaseClient: SupabaseClient
+    private val supabaseClient: SupabaseClient,
+    private val db: AppDatabase,
+    private val syncManager: SyncManager
 ) : FinanceRepository {
 
     override suspend fun getFeeInvoices(
         studentId: String?,
         monthFilter: String?
     ): Result<List<FeeInvoice>> = runCatching {
-        var query = supabaseClient.postgrest.from("fee_invoices").select()
-        
-        val listDto = query.decodeList<FeeInvoiceDto>()
-        if (listDto.isEmpty()) return Result.success(emptyList())
+        var listDto = if (studentId != null) {
+            db.financeDao().getInvoicesForStudent(studentId)
+        } else {
+            db.financeDao().getAllInvoices()
+        }
+
+        if (listDto.isEmpty()) {
+            syncManager.pullCloudToLocal()
+            listDto = if (studentId != null) {
+                db.financeDao().getInvoicesForStudent(studentId)
+            } else {
+                db.financeDao().getAllInvoices()
+            }
+        }
 
         val filtered = listDto.filter { dto ->
             val matchStudent = studentId == null || dto.studentId == studentId
@@ -35,8 +48,8 @@ class FinanceRepositoryImpl(
             matchStudent && matchMonth
         }
 
-        val studentProfiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
-        val students = supabaseClient.postgrest.from("students").select().decodeList<StudentDto>().associateBy { it.id }
+        val studentProfiles = db.studentDao().getAllStudentProfiles().associateBy { it.id }
+        val students = db.studentDao().getAllStudents().associateBy { it.id }
 
         filtered.map { dto ->
             val profile = studentProfiles[dto.studentId]
@@ -64,31 +77,43 @@ class FinanceRepositoryImpl(
         defaultAmount: Double,
         dueDate: String
     ): Result<Unit> = runCatching {
-        // Fetch all active students in the organization
-        val activeStudents = supabaseClient.postgrest.from("students").select {
-            filter {
-                eq("hostel_status", "Active")
-            }
-        }.decodeList<StudentDto>()
+        val activeStudents = db.studentDao().getAllStudents().filter { it.hostelStatus == "Active" }
 
         for (student in activeStudents) {
-            try {
-                // Insert a fee invoice
-                supabaseClient.postgrest.from("fee_invoices").insert(
-                    buildJsonObject {
-                        put("student_id", student.id)
-                        put("billing_month", month)
-                        put("amount", defaultAmount)
-                        put("due_date", dueDate)
-                        put("balance", defaultAmount)
-                        put("payment_status", "Pending")
-                    }
+            val newInvoiceId = UUID.randomUUID().toString()
+            val entity = FeeInvoiceEntity(
+                id = newInvoiceId,
+                studentId = student.id,
+                billingMonth = month,
+                amount = defaultAmount,
+                dueDate = dueDate,
+                balance = defaultAmount,
+                paymentStatus = "Pending"
+            )
+
+            db.financeDao().insertInvoice(entity)
+
+            val payload = buildJsonObject {
+                put("id", newInvoiceId)
+                put("student_id", student.id)
+                put("billing_month", month)
+                put("amount", defaultAmount)
+                put("due_date", dueDate)
+                put("balance", defaultAmount)
+                put("payment_status", "Pending")
+            }.toString()
+
+            db.syncQueueDao().enqueueSyncItem(
+                SyncQueueEntity(
+                    entityType = "FEE_INVOICE",
+                    entityId = newInvoiceId,
+                    action = "INSERT",
+                    payloadJson = payload
                 )
-            } catch (e: Exception) {
-                // If student invoice already generated, skip (handles unique constraint conflict gracefully)
-                e.printStackTrace()
-            }
+            )
         }
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun recordPayment(
@@ -99,13 +124,10 @@ class FinanceRepositoryImpl(
         transactionId: String?,
         notes: String?
     ): Result<Unit> = runCatching {
-        val accountantProfile = ServiceLocator.authRepository.getCurrentProfile().getOrThrow()
-            ?: throw IllegalStateException("User not logged in")
+        val accountantProfile = ServiceLocator.authRepository.getCurrentProfile().getOrNull()
 
-        // 1. Fetch current invoice
-        val invoice = supabaseClient.postgrest.from("fee_invoices").select {
-            filter { eq("id", invoiceId) }
-        }.decodeSingle<FeeInvoiceDto>()
+        val invoice = db.financeDao().getInvoiceById(invoiceId)
+            ?: throw IllegalStateException("Invoice not found locally")
 
         val newPaid = invoice.amountPaid + amount
         val newBalance = invoice.balance - amount
@@ -117,44 +139,90 @@ class FinanceRepositoryImpl(
             else -> "Pending"
         }
 
-        // 2. Update invoice
-        supabaseClient.postgrest.from("fee_invoices").update(
-            buildJsonObject {
-                put("amount_paid", newPaid)
-                put("balance", newBalance)
-                put("payment_status", newStatus)
-                if (newStatus == "Paid") put("payment_date", nowString)
-            }
-        ) {
-            filter { eq("id", invoiceId) }
-        }
-
-        // 3. Create payment record
-        supabaseClient.postgrest.from("payments").insert(
-            buildJsonObject {
-                put("student_id", studentId)
-                put("fee_invoice_id", invoiceId)
-                put("amount", amount)
-                put("payment_method", paymentMethod)
-                if (transactionId != null) put("transaction_id", transactionId)
-                put("recorded_by", accountantProfile.id)
-                if (notes != null) put("notes", notes)
-            }
+        val updatedInvoice = invoice.copy(
+            amountPaid = newPaid,
+            balance = newBalance,
+            paymentStatus = newStatus,
+            paymentDate = if (newStatus == "Paid") nowString else invoice.paymentDate
         )
+
+        db.financeDao().insertInvoice(updatedInvoice)
+
+        val newPaymentId = UUID.randomUUID().toString()
+        val paymentEntity = PaymentEntity(
+            id = newPaymentId,
+            studentId = studentId,
+            feeInvoiceId = invoiceId,
+            amount = amount,
+            paymentDate = nowString,
+            paymentMethod = paymentMethod,
+            transactionId = transactionId,
+            recordedBy = accountantProfile?.id,
+            notes = notes
+        )
+
+        db.financeDao().insertPayment(paymentEntity)
+
+        // Queue Sync Queue items
+        val invoicePayload = buildJsonObject {
+            put("amount_paid", newPaid)
+            put("balance", newBalance)
+            put("payment_status", newStatus)
+            if (newStatus == "Paid") put("payment_date", nowString)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "FEE_INVOICE",
+                entityId = invoiceId,
+                action = "UPDATE",
+                payloadJson = invoicePayload
+            )
+        )
+
+        val paymentPayload = buildJsonObject {
+            put("id", newPaymentId)
+            put("student_id", studentId)
+            put("fee_invoice_id", invoiceId)
+            put("amount", amount)
+            put("payment_date", nowString)
+            put("payment_method", paymentMethod)
+            if (transactionId != null) put("transaction_id", transactionId)
+            if (accountantProfile?.id != null) put("recorded_by", accountantProfile.id)
+            if (notes != null) put("notes", notes)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "PAYMENT",
+                entityId = newPaymentId,
+                action = "INSERT",
+                payloadJson = paymentPayload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun getPayments(studentId: String?): Result<List<Payment>> = runCatching {
-        val listDto = supabaseClient.postgrest.from("payments").select().decodeList<PaymentDto>()
-        
-        val filtered = if (studentId != null) {
-            listDto.filter { it.studentId == studentId }
+        var listDto = if (studentId != null) {
+            db.financeDao().getPaymentsForStudent(studentId)
         } else {
-            listDto
+            db.financeDao().getAllPayments()
         }
 
-        val studentProfiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
+        if (listDto.isEmpty()) {
+            syncManager.pullCloudToLocal()
+            listDto = if (studentId != null) {
+                db.financeDao().getPaymentsForStudent(studentId)
+            } else {
+                db.financeDao().getAllPayments()
+            }
+        }
 
-        filtered.map { dto ->
+        val studentProfiles = db.studentDao().getAllStudentProfiles().associateBy { it.id }
+
+        listDto.map { dto ->
             val profile = studentProfiles[dto.studentId]
             Payment(
                 id = dto.id,
@@ -172,15 +240,14 @@ class FinanceRepositoryImpl(
     }
 
     override suspend fun getFinancialStats(): Result<Map<String, Any>> = runCatching {
-        val invoices = supabaseClient.postgrest.from("fee_invoices").select().decodeList<FeeInvoiceDto>()
-        val payments = supabaseClient.postgrest.from("payments").select().decodeList<PaymentDto>()
+        val invoices = db.financeDao().getAllInvoices()
+        val payments = db.financeDao().getAllPayments()
 
         val totalBilled = invoices.sumOf { it.amount + it.lateFee - it.discount }
         val totalCollected = payments.sumOf { it.amount }
         val totalPending = invoices.filter { it.paymentStatus == "Pending" || it.paymentStatus == "Partially Paid" }.sumOf { it.balance }
         val totalOverdue = invoices.filter { it.paymentStatus == "Overdue" }.sumOf { it.balance }
 
-        // Fetch today's payments
         val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val todayCollected = payments.filter { it.paymentDate.startsWith(todayStr) }.sumOf { it.amount }
 

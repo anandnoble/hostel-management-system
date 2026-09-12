@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,7 +54,7 @@ fun FeesListScreen(
                 title = { Text("Mess Dues & Invoices") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -150,7 +151,7 @@ fun FeesListScreen(
                                     }
 
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Divider()
+                                    HorizontalDivider()
                                     Spacer(modifier = Modifier.height(12.dp))
 
                                     Row(
@@ -277,7 +278,7 @@ fun RecordPaymentScreen(
                 title = { Text("Record Payment") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )

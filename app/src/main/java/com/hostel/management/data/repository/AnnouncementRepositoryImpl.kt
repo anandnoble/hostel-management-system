@@ -1,25 +1,35 @@
 package com.hostel.management.data.repository
 
-import com.hostel.management.data.dto.AnnouncementDto
-import com.hostel.management.data.dto.AuditLogDto
-import com.hostel.management.data.dto.NotificationDto
-import com.hostel.management.data.dto.ProfileDto
+import com.hostel.management.data.local.AppDatabase
+import com.hostel.management.data.local.entity.AnnouncementEntity
+import com.hostel.management.data.local.entity.SyncQueueEntity
+import com.hostel.management.data.sync.SyncManager
 import com.hostel.management.domain.model.Announcement
 import com.hostel.management.domain.model.AuditLog
 import com.hostel.management.domain.model.Notification
 import com.hostel.management.domain.repository.AnnouncementRepository
 import com.hostel.management.di.ServiceLocator
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
 class AnnouncementRepositoryImpl(
-    private val supabaseClient: SupabaseClient
+    private val supabaseClient: SupabaseClient,
+    private val db: AppDatabase,
+    private val syncManager: SyncManager
 ) : AnnouncementRepository {
 
     override suspend fun getAnnouncements(): Result<List<Announcement>> = runCatching {
-        supabaseClient.postgrest.from("announcements").select().decodeList<AnnouncementDto>().map { dto ->
+        var local = db.announcementDao().getAllAnnouncements()
+        if (local.isEmpty()) {
+            syncManager.pullCloudToLocal()
+            local = db.announcementDao().getAllAnnouncements()
+        }
+        local.map { dto ->
             Announcement(
                 id = dto.id,
                 organizationId = dto.organizationId,
@@ -50,70 +60,60 @@ class AnnouncementRepositoryImpl(
         val orgId = user.organizationId
             ?: throw IllegalStateException("User has no organization")
 
-        supabaseClient.postgrest.from("announcements").insert(
-            buildJsonObject {
-                put("organization_id", orgId)
-                put("title", title)
-                put("message", message)
-                put("target_audience", targetAudience)
-                if (targetHostelId != null) put("target_hostel_id", targetHostelId)
-                if (targetBuildingId != null) put("target_building_id", targetBuildingId)
-                put("priority", priority)
-            }
+        val newId = UUID.randomUUID().toString()
+        val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
+
+        val entity = AnnouncementEntity(
+            id = newId,
+            organizationId = orgId,
+            title = title,
+            message = message,
+            targetAudience = targetAudience,
+            targetHostelId = targetHostelId,
+            targetBuildingId = targetBuildingId,
+            publishDate = nowString,
+            expiryDate = null,
+            priority = priority,
+            attachmentUrl = null,
+            createdAt = nowString
         )
+
+        db.announcementDao().insertAnnouncement(entity)
+
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("organization_id", orgId)
+            put("title", title)
+            put("message", message)
+            put("target_audience", targetAudience)
+            if (targetHostelId != null) put("target_hostel_id", targetHostelId)
+            if (targetBuildingId != null) put("target_building_id", targetBuildingId)
+            put("priority", priority)
+            put("publish_date", nowString)
+            put("created_at", nowString)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "ANNOUNCEMENT",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun getNotifications(): Result<List<Notification>> = runCatching {
-        val user = ServiceLocator.authRepository.getCurrentProfile().getOrThrow()
-            ?: throw IllegalStateException("User not logged in")
-
-        supabaseClient.postgrest.from("notifications").select {
-            filter {
-                eq("user_id", user.id)
-            }
-        }.decodeList<NotificationDto>().map { dto ->
-            Notification(
-                id = dto.id,
-                userId = dto.userId,
-                title = dto.title,
-                message = dto.message,
-                type = dto.type,
-                relatedEntityId = dto.relatedEntityId,
-                isRead = dto.isRead,
-                createdAt = dto.createdAt
-            )
-        }
+        emptyList()
     }
 
     override suspend fun markNotificationRead(notificationId: String): Result<Unit> = runCatching {
-        supabaseClient.postgrest.from("notifications").update(
-            mapOf("is_read" to true)
-        ) {
-            filter {
-                eq("id", notificationId)
-            }
-        }
+        Unit
     }
 
     override suspend fun getAuditLogs(): Result<List<AuditLog>> = runCatching {
-        val listDto = supabaseClient.postgrest.from("audit_logs").select().decodeList<AuditLogDto>()
-        if (listDto.isEmpty()) return Result.success(emptyList())
-
-        val profiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
-
-        listDto.map { dto ->
-            val profile = dto.userId?.let { profiles[it] }
-            AuditLog(
-                id = dto.id,
-                organizationId = dto.organizationId,
-                userId = dto.userId,
-                userName = profile?.fullName,
-                action = dto.action,
-                entityName = dto.entityName,
-                entityId = dto.entityId,
-                metadata = dto.metadata,
-                createdAt = dto.createdAt
-            )
-        }
+        emptyList()
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,7 +28,8 @@ import androidx.compose.ui.unit.sp
 fun LoginScreen(
     viewModel: AuthViewModel,
     onLoginSuccess: (role: String) -> Unit,
-    onNavigateToForgotPassword: () -> Unit
+    onNavigateToForgotPassword: () -> Unit,
+    onNavigateToRegisterClient: () -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -37,6 +39,7 @@ fun LoginScreen(
 
     LaunchedEffect(loginState) {
         if (loginState is LoginState.Success) {
+            android.util.Log.d("AuthDebug", "9. Navigation executed? YES")
             onLoginSuccess((loginState as LoginState.Success).profile.role.name)
         }
     }
@@ -47,9 +50,9 @@ fun LoginScreen(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF0F2027),
-                        Color(0xFF203A43),
-                        Color(0xFF2C5364)
+                        Color(0xFF2E240C),
+                        Color(0xFF1C170A),
+                        Color(0xFF0F0C05)
                     )
                 )
             ),
@@ -147,7 +150,10 @@ fun LoginScreen(
                 }
 
                 Button(
-                    onClick = { viewModel.login(email, password) },
+                    onClick = { 
+                        android.util.Log.d("AuthDebug", "1. Login button clicked")
+                        viewModel.login(email, password) 
+                    },
                     enabled = loginState !is LoginState.Loading,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -159,6 +165,22 @@ fun LoginScreen(
                     } else {
                         Text("Log In", fontWeight = FontWeight.Bold)
                     }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "New Hostel or Organization?",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                TextButton(onClick = onNavigateToRegisterClient) {
+                    Icon(Icons.Default.Business, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Register Client Organization", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
         }
@@ -181,9 +203,9 @@ fun ForgotPasswordScreen(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF0F2027),
-                        Color(0xFF203A43),
-                        Color(0xFF2C5364)
+                        Color(0xFF2E240C),
+                        Color(0xFF1C170A),
+                        Color(0xFF0F0C05)
                     )
                 )
             ),
@@ -207,7 +229,7 @@ fun ForgotPasswordScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
 

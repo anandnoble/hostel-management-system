@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="description" content="Student Registration & Portal — Hostel Management System" />
+
+  <title>Student Portal — Hostel Management</title>
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>" />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <!-- QR Code generator -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+  <!-- Animated background scene -->
+  <div class="bg-scene" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <!-- Top Navigation Header -->
+  <nav class="app-navbar">
+    <div class="nav-brand">
+      <span class="brand-logo">🏠</span>
+      <span class="brand-title" id="nav-hostel-name">Hostel Portal</span>
+    </div>
+    <div class="nav-actions">
+      <button class="nav-btn" id="nav-btn-login" type="button" onclick="showAuthMode('login')">Student Login</button>
+      <button class="nav-btn active" id="nav-btn-register" type="button" onclick="showAuthMode('register')">Register Account</button>
+      <div id="user-badge-wrap" style="display:none">
+        <span id="user-profile-name" class="user-profile-name">Student</span>
+        <button class="nav-btn nav-logout" id="btn-logout" type="button" onclick="handleLogout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <div id="app">
+
+    <!-- ─────────────────────────────────────────────────
+         1. LOADING SCREEN
+    ───────────────────────────────────────────────── -->
+    <div id="screen-loading" class="screen active" aria-live="polite">
+      <div class="loader-ring" role="status" aria-label="Loading"></div>
+      <p class="loader-text">Connecting to Hostel Portal…</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────
+         2. AUTH SCREEN (LOGIN / REGISTRATION)
+    ───────────────────────────────────────────────── -->
+    <div id="screen-auth" class="screen">
+      <div class="auth-card">
+        
+        <div class="auth-header">
+          <div class="auth-icon">🎓</div>
+          <h2 id="auth-title">Student Registration</h2>
+          <p id="auth-subtitle">Create your account to choose your room & bed</p>
+        </div>
+
+        <!-- Mode Toggle Tabs -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="tab-register" onclick="showAuthMode('register')">New Registration</button>
+          <button class="auth-tab" id="tab-login" onclick="showAuthMode('login')">Student Login</button>
+        </div>
+
+        <!-- Registration Form -->
+        <form id="form-register" onsubmit="event.preventDefault(); handleRegister();">
+          <div class="field">
+            <label for="reg-name">Full Name <span class="req">*</span></label>
+            <input type="text" id="reg-name" required placeholder="e.g. Rahul Sharma" autocomplete="name" />
+          </div>
+
+          <div class="field">
+            <label for="reg-email">Email Address <span class="req">*</span></label>
+            <input type="email" id="reg-email" required placeholder="you@example.com" autocomplete="email" />
+          </div>
+
+          <div class="field">
+            <label for="reg-phone">Phone Number <span class="req">*</span></label>
+            <input type="tel" id="reg-phone" required placeholder="+91 98765 43210" autocomplete="tel" />
+          </div>
+
+          <div class="field">
+            <label for="reg-password">Create Password <span class="req">*</span></label>
+            <input type="password" id="reg-password" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" />
+          </div>
+
+          <button class="btn btn-primary" id="btn-do-register" type="submit" style="width:100%; margin-top:10px;">
+            🎓 &nbsp;Register Account
+          </button>
+        </form>
+
+        <!-- Login Form -->
+        <form id="form-login" style="display:none" onsubmit="event.preventDefault(); handleLogin();">
+          <div class="field">
+            <label for="login-email">Email Address <span class="req">*</span></label>
+            <input type="email" id="login-email" required placeholder="you@example.com" autocomplete="email" />
+          </div>
+
+          <div class="field">
+            <label for="login-password">Password <span class="req">*</span></label>
+            <input type="password" id="login-password" required placeholder="••••••••" autocomplete="current-password" />
+          </div>
+
+          <button class="btn btn-primary" id="btn-do-login" type="submit" style="width:100%; margin-top:10px;">
+            🔑 &nbsp;Log In to Portal
+          </button>
+        </form>
+
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────
+         3. BED SELECTION & FIXED ADVANCE UPI PAYMENT SCREEN
+    ───────────────────────────────────────────────── -->
+    <div id="screen-booking" class="screen">
+      <div class="booking-card">
+        
+        <div class="booking-header">
+          <span class="badge-step">Step 1 of 2</span>
+          <h2>Select Bed & Pay Fixed Advance</h2>
+          <p id="booking-hostel-name">Choose your available bed and complete advance deposit payment.</p>
+        </div>
+
+        <!-- Bed Selector Section -->
+        <div class="section-box">
+          <h3 class="section-heading">🛏️ Step 1: Choose Available Bed</h3>
+          
+          <div class="field-row">
+            <div class="field">
+              <label for="select-floor">Select Floor <span class="req">*</span></label>
+              <select id="select-floor" required onchange="onFloorSelected()">
+                <option value="">Loading floors…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="select-room">Select Room <span class="req">*</span></label>
+              <select id="select-room" required onchange="onRoomSelected()" disabled>
+                <option value="">Select floor first</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="select-bed">Select Available Bed <span class="req">*</span></label>
+            <select id="select-bed" required disabled onchange="onBedSelected()">
+              <option value="">Select room first</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- UPI Fixed Advance Payment Section -->
+        <div class="section-box" id="section-payment" style="margin-top: 20px;">
+          <h3 class="section-heading">💳 Step 2: Pay Fixed Advance Deposit</h3>
+          <p class="section-subtext">Scan this UPI QR code using <strong>PhonePe, GPay, Paytm or BHIM</strong>. The fixed advance amount will be automatically pre-filled.</p>
+
+          <div class="upi-payment-container">
+            <div class="qr-code-wrapper">
+              <img id="advance-upi-qr" alt="UPI Advance Payment QR" src="" style="width: 180px; height: 180px; display: block; object-fit: contain;" />
+              <div class="upi-deposit-badge">
+                <span class="deposit-amount" id="display-advance-amount">₹0.00</span>
+                <span class="deposit-label">Fixed Advance Deposit</span>
+              </div>
+            </div>
+
+            <div class="upi-details-card">
+              <div class="detail-row">
+                <span class="detail-label">Hostel UPI ID</span>
+                <span class="detail-value highlight" id="display-upi-id">Not Configured</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Fixed Monthly Fee</span>
+                <span class="detail-value" id="display-monthly-fee">₹0.00 / month</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Advance Deposit Required</span>
+                <span class="detail-value primary" id="display-advance-fee">₹0.00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Payment Submission Details -->
+          <form id="form-submit-payment" onsubmit="event.preventDefault(); submitPaymentVerification();" style="margin-top:20px;">
+            <div class="field-row">
+              <div class="field">
+                <label for="input-full-name">Student Full Name <span class="req">*</span></label>
+                <input type="text" id="input-full-name" required placeholder="e.g. Abhinay Goud" />
+              </div>
+              <div class="field">
+                <label for="input-phone">Phone Number <span class="req">*</span></label>
+                <input type="tel" id="input-phone" required placeholder="e.g. 9876543210" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="input-utr">UPI Reference / UTR Transaction ID <span class="req">*</span></label>
+              <input type="text" id="input-utr" required placeholder="e.g. 326198471203" />
+              <span class="field-hint">Enter the 12-digit UTR/Ref number shown on your payment receipt</span>
+            </div>
+
+            <div class="field">
+              <label for="input-joining-date">Planned Joining Date <span class="req">*</span></label>
+              <input type="date" id="input-joining-date" required />
+            </div>
+
+            <div class="field">
+              <label for="input-aadhaar">Aadhaar Card Number <span class="req">*</span></label>
+              <input type="text" id="input-aadhaar" maxlength="12" required placeholder="12-digit Aadhaar Number" />
+            </div>
+
+            <div class="field">
+              <label for="input-student-id">College Roll / Student ID <span class="optional-badge">optional</span></label>
+              <input type="text" id="input-student-id" placeholder="e.g. 22CS1034" />
+            </div>
+
+            <button class="btn btn-success" id="btn-submit-booking" type="submit" style="width:100%; margin-top:16px;">
+              ✅ &nbsp;Submit Payment & Bed Booking
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────
+         4. UNDER VERIFICATION SCREEN
+    ───────────────────────────────────────────────── -->
+    <div id="screen-verification" class="screen">
+      <div class="verification-card">
+        <div class="verification-icon">⏳</div>
+        <h2>Payment Under Verification</h2>
+        <div class="verification-banner">
+          <p>Your payment is under verification. We will verify your transaction and update the app once confirmed by the hostel owner.</p>
+        </div>
+
+        <div class="receipt-summary">
+          <h3>Booking Details</h3>
+          <div class="receipt-row">
+            <span>Requested Bed</span>
+            <strong id="verif-bed-info">—</strong>
+          </div>
+          <div class="receipt-row">
+            <span>Submitted UTR No.</span>
+            <strong id="verif-utr-no">—</strong>
+          </div>
+          <div class="receipt-row">
+            <span>Advance Deposit Paid</span>
+            <strong id="verif-advance-amount">₹0.00</strong>
+          </div>
+          <div class="receipt-row">
+            <span>Planned Joining Date</span>
+            <strong id="verif-joining-date">—</strong>
+          </div>
+          <div class="receipt-row">
+            <span>Status</span>
+            <span class="status-badge warn">Pending Admin Verification</span>
+          </div>
+        </div>
+
+        <button class="btn btn-outline" onclick="location.reload()" style="margin-top: 20px; width: 100%;">
+          🔄 Refresh Verification Status
+        </button>
+
+        <button class="btn btn-outline" onclick="setupBookingScreen()" style="margin-top: 10px; width: 100%; border-color: rgba(255,255,255,0.2);">
+          ✏️ Edit / Submit New Bed Request
+        </button>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────
+         5. APPROVED STUDENT DASHBOARD (SIMPLE & NON-COMPLEX)
+    ───────────────────────────────────────────────── -->
+    <div id="screen-approved" class="screen">
+      
+      <div class="approved-header">
+        <div>
+          <h2 id="appr-student-name">Welcome Student</h2>
+          <p id="appr-hostel-name">Main Campus Hostel</p>
+        </div>
+        <div class="approved-badge">Active Resident</div>
+      </div>
+
+      <!-- 10-Day Payment Countdown Warning Banner -->
+      <div id="appr-payment-due-banner" style="display:none; background: rgba(255, 152, 0, 0.15); border: 1px solid #FF9800; border-radius: 12px; padding: 14px; margin-bottom: 20px; color: #FFA726;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">⚠️</span>
+          <div>
+            <strong style="font-size: 15px; display: block;" id="appr-due-heading">Monthly Fee Due Soon</strong>
+            <span style="font-size: 13px;" id="appr-due-text">Please submit your monthly hostel fee before your due date.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="approved-grid">
+
+        <!-- 1. Allocated Bed & Room -->
+        <div class="approved-card">
+          <div class="card-icon">🛏️</div>
+          <h3>My Allocated Bed & Room</h3>
+          <div class="detail-big" id="appr-room-bed">Room — · Bed —</div>
+          <p class="detail-sub" id="appr-joining-schedule">Joining Date: —</p>
+        </div>
+
+        <!-- 2. Profile Details -->
+        <div class="approved-card">
+          <div class="card-icon">👤</div>
+          <h3>My Profile & Contact</h3>
+          <div class="info-list">
+            <div class="info-row">
+              <span>Email:</span> <strong id="appr-email">—</strong>
+            </div>
+            <div class="info-row">
+              <span>Phone:</span> <strong id="appr-phone">—</strong>
+            </div>
+            <div class="info-row">
+              <span>Aadhaar No:</span> <strong id="appr-aadhaar">—</strong>
+            </div>
+            <div class="info-row">
+              <span>Monthly Fee:</span> <strong id="appr-monthly-fee">₹0.00 / mo</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Pay Monthly Fee UPI Payment Card -->
+        <div class="approved-card full-width">
+          <h3>💳 Pay Monthly Hostel Fee</h3>
+          <p class="section-subtext">Scan UPI QR code or pay to <strong><span id="appr-monthly-upi-id">Hostel UPI</span></strong> and submit UTR reference number below.</p>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; align-items: center;">
+            <img id="appr-monthly-qr" alt="Monthly Fee UPI QR" src="" style="width: 140px; height: 140px; border-radius: 8px; background: white; padding: 4px;" />
+            <form id="form-monthly-payment" onsubmit="event.preventDefault(); submitMonthlyPaymentUtr();" style="flex: 1; min-width: 240px;">
+              <div class="field">
+                <label for="input-monthly-utr">Monthly Payment UTR / Ref Number <span class="req">*</span></label>
+                <input type="text" id="input-monthly-utr" required placeholder="12-digit UPI UTR No." />
+              </div>
+              <div class="field" style="margin-top: 8px;">
+                <label for="input-billing-month">Billing Month <span class="req">*</span></label>
+                <input type="text" id="input-billing-month" required placeholder="e.g. October 2026" />
+              </div>
+              <button class="btn btn-primary" id="btn-submit-monthly" type="submit" style="width:100%; margin-top:10px;">
+                💸 &nbsp;Submit Monthly Fee UTR
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- 4. Hostel Announcements -->
+        <div class="approved-card full-width">
+          <div class="card-header-row">
+            <h3>📢 Hostel Announcements</h3>
+            <button class="refresh-sm" onclick="loadAnnouncements()">Refresh</button>
+          </div>
+          <div id="approved-announcements-list" class="announcements-container">
+            <div class="empty-state">Loading announcements…</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div><!-- /#app -->
+
+  <script src="app.js"></script>
+</body>
+</html>

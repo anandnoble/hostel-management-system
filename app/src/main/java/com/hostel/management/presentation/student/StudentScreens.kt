@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,7 +61,7 @@ fun StudentListScreen(
                 title = { Text("Students Directory") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -229,7 +230,7 @@ fun StudentDetailsScreen(
                 title = { Text("Student Profile") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -299,7 +300,7 @@ fun StudentDetailsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Academic Details", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                         DetailRow("Course", s.course ?: "-")
                         DetailRow("Department", s.department ?: "-")
@@ -316,7 +317,7 @@ fun StudentDetailsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Contact Information", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                         DetailRow("Email", s.profile.email)
                         DetailRow("Phone", s.profile.phone ?: "-")
@@ -332,7 +333,7 @@ fun StudentDetailsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Guardian Details", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                         DetailRow("Guardian Name", s.parentName ?: "-")
                         DetailRow("Guardian Phone", s.parentPhone ?: "-")
@@ -434,7 +435,7 @@ fun StudentFormScreen(
                 title = { Text(if (isEdit) "Edit Student Details" else "Register Student") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )

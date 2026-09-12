@@ -4,8 +4,10 @@ sealed class Screen(val route: String) {
     // Auth routes
     object Login : Screen("login")
     object ForgotPassword : Screen("forgot_password")
+    object RegisterClient : Screen("register_client")
     
     // Role dashboards
+    object SaasDashboard : Screen("saas_dashboard")
     object AdminDashboard : Screen("admin_dashboard")
     object StudentDashboard : Screen("student_dashboard")
     object AccountantDashboard : Screen("accountant_dashboard")
@@ -44,4 +46,8 @@ sealed class Screen(val route: String) {
     object AuditLogs : Screen("audit_logs")
     object Reports : Screen("reports")
     object Profile : Screen("profile")
+    object BackupSync : Screen("backup_sync")
+    object StudentSelfRegistration : Screen("student_self_registration?hostelId={hostelId}") {
+        fun createRoute(hostelId: String? = null) = if (hostelId != null) "student_self_registration?hostelId=$hostelId" else "student_self_registration"
+    }
 }

@@ -4,6 +4,29 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class OrganizationDto(
+    val id: String,
+    val name: String,
+    val domain: String? = null,
+    @SerialName("logo_url") val logoUrl: String? = null,
+    val status: String,
+    @SerialName("subscription_plan") val subscriptionPlan: String,
+    @SerialName("pricing_model") val pricingModel: String? = "Slab"
+)
+
+@Serializable
+data class SaasPricingConfigDto(
+    val id: String,
+    @SerialName("per_student_rate") val perStudentRate: Double,
+    @SerialName("slab1_max_students") val slab1MaxStudents: Int,
+    @SerialName("slab1_price") val slab1Price: Double,
+    @SerialName("slab2_max_students") val slab2MaxStudents: Int,
+    @SerialName("slab2_price") val slab2Price: Double,
+    @SerialName("slab3_max_students") val slab3MaxStudents: Int,
+    @SerialName("slab3_price") val slab3Price: Double
+)
+
+@Serializable
 data class ProfileDto(
     val id: String,
     @SerialName("organization_id") val organizationId: String? = null,
@@ -38,7 +61,10 @@ data class HostelDto(
     val id: String,
     @SerialName("organization_id") val organizationId: String,
     val name: String,
-    val address: String? = null
+    val address: String? = null,
+    @SerialName("upi_id") val upiId: String? = null,
+    @SerialName("monthly_fee") val monthlyFee: Double? = null,
+    @SerialName("advance_deposit") val advanceDeposit: Double? = null
 )
 
 @Serializable
@@ -186,4 +212,37 @@ data class AuditLogDto(
     @SerialName("entity_id") val entityId: String? = null,
     val metadata: String? = null,
     @SerialName("created_at") val createdAt: String
+)
+
+@Serializable
+data class StudentSelfRegistrationDto(
+    val id: String,
+    @SerialName("hostel_id") val hostelId: String? = null,
+    @SerialName("full_name") val fullName: String,
+    val email: String,
+    val phone: String? = null,
+    @SerialName("student_id_number") val studentIdNumber: String? = null,
+    @SerialName("aadhaar_number") val aadhaarNumber: String? = null,
+    @SerialName("room_number") val roomNumber: String? = null,
+    @SerialName("bed_number") val bedNumber: String? = null,
+    val status: String = "Pending",
+    val notes: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class MonthlyPaymentSubmissionDto(
+    val id: String,
+    @SerialName("hostel_id") val hostelId: String? = null,
+    @SerialName("student_id") val studentId: String? = null,
+    val email: String,
+    @SerialName("full_name") val fullName: String,
+    @SerialName("room_number") val roomNumber: String? = null,
+    @SerialName("bed_number") val bedNumber: String? = null,
+    val amount: Double,
+    @SerialName("utr_number") val utrNumber: String,
+    @SerialName("billing_month") val billingMonth: String,
+    val status: String = "Pending",
+    val notes: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
 )

@@ -3,6 +3,7 @@ package com.hostel.management
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -10,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.navigation.compose.rememberNavController
 import com.hostel.management.navigation.NavGraph
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,38 +31,52 @@ class MainActivity : ComponentActivity() {
 }
 
 val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF90CAF9),
-    secondary = Color(0xFFA5D6A7),
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    onPrimary = Color(0xFF0D47A1),
-    onSecondary = Color(0xFF1B5E20),
-    onBackground = Color(0xFFE0E0E0),
-    onSurface = Color(0xFFE0E0E0),
-    primaryContainer = Color(0xFF1976D2),
-    onPrimaryContainer = Color(0xFFE3F2FD)
+    primary = Color(0xFFFFD700), // Vibrant Metallic Gold
+    secondary = Color(0xFFE5C158), // Bright Warm Gold
+    tertiary = Color(0xFFF3E5AB), // Cream Gold Accent
+    background = Color(0xFF12100C), // Deep Obsidian Gold
+    surface = Color(0xFF1C1812), // Dark Amber Gold Surface
+    onPrimary = Color(0xFF12100C),
+    onSecondary = Color(0xFF12100C),
+    onBackground = Color(0xFFFAF6F0), // Champagne White
+    onSurface = Color(0xFFFAF6F0), // Champagne White
+    primaryContainer = Color(0xFF3B300A), // Deep Gold Container
+    onPrimaryContainer = Color(0xFFFFF8E0),
+    secondaryContainer = Color(0xFF2E250A),
+    onSecondaryContainer = Color(0xFFFFF0CB),
+    surfaceVariant = Color(0xFF282219),
+    onSurfaceVariant = Color(0xFFE8DCC4),
+    outline = Color(0xFF8A7333)
 )
 
 val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF1976D2),
-    secondary = Color(0xFF388E3C),
-    background = Color(0xFFF8F9FA),
-    surface = Color(0xFFFFFFFF),
+    primary = Color(0xFFD4AF37), // Metallic Gold
+    secondary = Color(0xFFB8860B), // Dark Goldenrod
+    tertiary = Color(0xFF967117), // Rich Bronze Gold
+    background = Color(0xFFFAFAFA), // Porcelain White
+    surface = Color(0xFFFFFFFF), // Pristine Pure White
     onPrimary = Color(0xFFFFFFFF),
     onSecondary = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF212121),
-    onSurface = Color(0xFF212121),
-    primaryContainer = Color(0xFFD0E1FD),
-    onPrimaryContainer = Color(0xFF0D47A1)
+    onBackground = Color(0xFF1F1A0E), // Warm Deep Charcoal
+    onSurface = Color(0xFF1F1A0E), // Warm Deep Charcoal
+    primaryContainer = Color(0xFFFFF7DB), // Warm Ivory Gold Tint
+    onPrimaryContainer = Color(0xFF524000), // Deep Golden Text
+    secondaryContainer = Color(0xFFFFF0CB), // Light Champagne Gold
+    onSecondaryContainer = Color(0xFF423300),
+    surfaceVariant = Color(0xFFF7F2E7), // Pearl Champagne White
+    onSurfaceVariant = Color(0xFF4A4131),
+    outline = Color(0xFFD6BE8A) // Soft Gold Border Accent
 )
 
 @Composable
 fun HostelTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // Dynamic light scheme styling
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     MaterialTheme(
-        colorScheme = LightColorScheme,
+        colorScheme = colorScheme,
         content = content
     )
 }
+

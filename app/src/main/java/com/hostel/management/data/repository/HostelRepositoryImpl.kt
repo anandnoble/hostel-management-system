@@ -1,93 +1,163 @@
 package com.hostel.management.data.repository
 
 import com.hostel.management.data.dto.*
+import com.hostel.management.data.local.AppDatabase
+import com.hostel.management.data.local.entity.*
+import com.hostel.management.data.sync.SyncManager
 import com.hostel.management.domain.model.*
 import com.hostel.management.domain.repository.HostelRepository
 import com.hostel.management.di.ServiceLocator
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
-import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 class HostelRepositoryImpl(
-    private val supabaseClient: SupabaseClient
+    private val supabaseClient: SupabaseClient,
+    private val db: AppDatabase,
+    private val syncManager: SyncManager
 ) : HostelRepository {
 
     override suspend fun getHostels(): Result<List<Hostel>> = runCatching {
-        supabaseClient.postgrest.from("hostels").select().decodeList<HostelDto>().map { dto ->
-            Hostel(dto.id, dto.organizationId, dto.name, dto.address)
+        var local = db.hostelDao().getAllHostels()
+        if (local.isEmpty()) {
+            // Attempt initial pull from cloud if local DB is empty
+            runCatching { syncManager.pullCloudToLocal() }
+            local = db.hostelDao().getAllHostels()
         }
+        if (local.isEmpty()) {
+            // Pre-seed default offline hostel if offline on first launch
+            val defaultHostel = HostelEntity("hostel_default", "org_default", "Main Campus Hostel", "Campus Road")
+            db.hostelDao().insertHostel(defaultHostel)
+            local = listOf(defaultHostel)
+        }
+        local.map { Hostel(it.id, it.organizationId, it.name, it.address, it.upiId, it.monthlyFee, it.advanceDeposit) }
     }
 
     override suspend fun createHostel(name: String, address: String?): Result<Hostel> = runCatching {
-        val profile = ServiceLocator.authRepository.getCurrentProfile().getOrThrow()
-            ?: throw IllegalStateException("User not logged in")
-        val orgId = profile.organizationId 
-            ?: throw IllegalStateException("User has no organization")
+        val profile = ServiceLocator.authRepository.getCurrentProfile().getOrNull()
+        val orgId = profile?.organizationId ?: "org_default"
+        val newId = UUID.randomUUID().toString()
 
-        val dto = supabaseClient.postgrest.from("hostels").insert(
-            mapOf("name" to name, "address" to address, "organization_id" to orgId)
-        ) { select() }.decodeSingle<HostelDto>()
+        val entity = HostelEntity(
+            id = newId,
+            organizationId = orgId,
+            name = name,
+            address = address
+        )
 
-        Hostel(dto.id, dto.organizationId, dto.name, dto.address)
+        // 1. Save to local Room DB immediately
+        db.hostelDao().insertHostel(entity)
+
+        // 2. Queue for cloud sync
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("organization_id", orgId)
+            put("name", name)
+            if (address != null) put("address", address)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "HOSTEL",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        // 3. Trigger auto sync if online
+        syncManager.triggerAutoSyncIfEnabled()
+
+        Hostel(newId, orgId, name, address)
     }
 
     override suspend fun getBuildings(hostelId: String): Result<List<Building>> = runCatching {
-        supabaseClient.postgrest.from("buildings").select {
-            filter {
-                eq("hostel_id", hostelId)
-            }
-        }.decodeList<BuildingDto>().map { dto ->
-            Building(dto.id, dto.hostelId, dto.name)
+        var local = db.hostelDao().getBuildingsForHostel(hostelId)
+        if (local.isEmpty()) {
+            runCatching { syncManager.pullCloudToLocal() }
+            local = db.hostelDao().getBuildingsForHostel(hostelId)
         }
+        local.map { Building(it.id, it.hostelId, it.name) }
     }
 
     override suspend fun createBuilding(hostelId: String, name: String): Result<Building> = runCatching {
-        val dto = supabaseClient.postgrest.from("buildings").insert(
-            mapOf("hostel_id" to hostelId, "name" to name)
-        ) { select() }.decodeSingle<BuildingDto>()
+        val newId = UUID.randomUUID().toString()
+        val entity = BuildingEntity(id = newId, hostelId = hostelId, name = name)
 
-        Building(dto.id, dto.hostelId, dto.name)
+        db.hostelDao().insertBuilding(entity)
+
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("hostel_id", hostelId)
+            put("name", name)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "BUILDING",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
+
+        Building(newId, hostelId, name)
     }
 
     override suspend fun getFloors(buildingId: String): Result<List<Floor>> = runCatching {
-        supabaseClient.postgrest.from("floors").select {
-            filter {
-                eq("building_id", buildingId)
-            }
-        }.decodeList<FloorDto>().map { dto ->
-            Floor(dto.id, dto.buildingId, dto.floorNumber)
+        var local = db.hostelDao().getFloorsForBuilding(buildingId)
+        if (local.isEmpty()) {
+            runCatching { syncManager.pullCloudToLocal() }
+            local = db.hostelDao().getFloorsForBuilding(buildingId)
         }
+        local.map { Floor(it.id, it.buildingId, it.floorNumber) }
     }
 
     override suspend fun createFloor(buildingId: String, floorNumber: Int): Result<Floor> = runCatching {
-        val dto = supabaseClient.postgrest.from("floors").insert(
-            mapOf("building_id" to buildingId, "floor_number" to floorNumber)
-        ) { select() }.decodeSingle<FloorDto>()
+        val newId = UUID.randomUUID().toString()
+        val entity = FloorEntity(id = newId, buildingId = buildingId, floorNumber = floorNumber)
 
-        Floor(dto.id, dto.buildingId, dto.floorNumber)
+        db.hostelDao().insertFloor(entity)
+
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("building_id", buildingId)
+            put("floor_number", floorNumber)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "FLOOR",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
+
+        Floor(newId, buildingId, floorNumber)
     }
 
     override suspend fun getRooms(floorId: String): Result<List<Room>> = runCatching {
-        val roomsDto = supabaseClient.postgrest.from("rooms").select {
-            filter {
-                eq("floor_id", floorId)
-            }
-        }.decodeList<RoomDto>()
-        
-        // Count occupied beds for these rooms
-        roomsDto.map { dto ->
-            val beds = supabaseClient.postgrest.from("beds").select {
-                filter {
-                    eq("room_id", dto.id)
-                }
-            }.decodeList<BedDto>()
+        var localRooms = db.hostelDao().getRoomsForFloor(floorId)
+        if (localRooms.isEmpty()) {
+            runCatching { syncManager.pullCloudToLocal() }
+            localRooms = db.hostelDao().getRoomsForFloor(floorId)
+        }
+
+        localRooms.map { dto ->
+            val beds = db.hostelDao().getBedsForRoom(dto.id)
             val occupied = beds.count { it.status == "Occupied" }
             Room(
                 id = dto.id,
@@ -110,70 +180,168 @@ class HostelRepositoryImpl(
         capacity: Int,
         roomType: String
     ): Result<Room> = runCatching {
-        val dto = supabaseClient.postgrest.from("rooms").insert(
-            mapOf(
-                "floor_id" to floorId,
-                "room_number" to roomNumber,
-                "capacity" to capacity,
-                "room_type" to roomType,
-                "status" to "Available"
-            )
-        ) { select() }.decodeSingle<RoomDto>()
+        val newRoomId = UUID.randomUUID().toString()
+        val roomEntity = RoomEntity(
+            id = newRoomId,
+            floorId = floorId,
+            roomNumber = roomNumber,
+            capacity = capacity,
+            roomType = roomType,
+            status = "Available"
+        )
 
-        // Pre-create beds for the room
+        db.hostelDao().insertRoom(roomEntity)
+
+        val roomPayload = buildJsonObject {
+            put("id", newRoomId)
+            put("floor_id", floorId)
+            put("room_number", roomNumber)
+            put("capacity", capacity)
+            put("room_type", roomType)
+            put("status", "Available")
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "ROOM",
+                entityId = newRoomId,
+                action = "INSERT",
+                payloadJson = roomPayload
+            )
+        )
+
+        // Pre-create beds for the room locally & enqueue sync
+        val createdBeds = mutableListOf<BedEntity>()
         for (i in 1..capacity) {
+            val bedId = UUID.randomUUID().toString()
             val bedLabel = "Bed " + ('A'.code + i - 1).toChar()
-            supabaseClient.postgrest.from("beds").insert(
-                mapOf(
-                    "room_id" to dto.id,
-                    "bed_number" to bedLabel,
-                    "status" to "Available"
+            val bedEntity = BedEntity(id = bedId, roomId = newRoomId, bedNumber = bedLabel, status = "Available")
+            createdBeds.add(bedEntity)
+
+            val bedPayload = buildJsonObject {
+                put("id", bedId)
+                put("room_id", newRoomId)
+                put("bed_number", bedLabel)
+                put("status", "Available")
+            }.toString()
+
+            db.syncQueueDao().enqueueSyncItem(
+                SyncQueueEntity(
+                    entityType = "BED",
+                    entityId = bedId,
+                    action = "INSERT",
+                    payloadJson = bedPayload
                 )
             )
         }
+        db.hostelDao().insertBeds(createdBeds)
+
+        syncManager.triggerAutoSyncIfEnabled()
 
         Room(
-            id = dto.id,
-            floorId = dto.floorId,
-            roomNumber = dto.roomNumber,
-            capacity = dto.capacity,
-            roomType = dto.roomType,
-            status = dto.status,
-            notes = dto.notes,
+            id = newRoomId,
+            floorId = floorId,
+            roomNumber = roomNumber,
+            capacity = capacity,
+            roomType = roomType,
+            status = "Available",
+            notes = null,
             bedsCount = capacity,
             occupiedBedsCount = 0
         )
     }
 
     override suspend fun getBeds(roomId: String): Result<List<Bed>> = runCatching {
-        supabaseClient.postgrest.from("beds").select {
-            filter {
-                eq("room_id", roomId)
-            }
-        }.decodeList<BedDto>().map { dto ->
-            Bed(dto.id, dto.roomId, dto.bedNumber, dto.status)
+        var local = db.hostelDao().getBedsForRoom(roomId)
+        if (local.isEmpty()) {
+            runCatching { syncManager.pullCloudToLocal() }
+            local = db.hostelDao().getBedsForRoom(roomId)
         }
+        local.map { Bed(it.id, it.roomId, it.bedNumber, it.status) }
+    }
+
+    override suspend fun createBed(roomId: String, bedNumber: String): Result<Bed> = runCatching {
+        val newId = UUID.randomUUID().toString()
+        val entity = BedEntity(id = newId, roomId = roomId, bedNumber = bedNumber, status = "Available")
+
+        db.hostelDao().insertBed(entity)
+
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("room_id", roomId)
+            put("bed_number", bedNumber)
+            put("status", "Available")
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "BED",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
+
+        Bed(newId, roomId, bedNumber, "Available")
+    }
+
+    override suspend fun deleteFloor(floorId: String): Result<Unit> = runCatching {
+        db.hostelDao().deleteFloor(floorId)
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "FLOOR",
+                entityId = floorId,
+                action = "DELETE",
+                payloadJson = "{}"
+            )
+        )
+        syncManager.triggerAutoSyncIfEnabled()
+    }
+
+    override suspend fun deleteRoom(roomId: String): Result<Unit> = runCatching {
+        db.hostelDao().deleteRoom(roomId)
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "ROOM",
+                entityId = roomId,
+                action = "DELETE",
+                payloadJson = "{}"
+            )
+        )
+        syncManager.triggerAutoSyncIfEnabled()
+    }
+
+    override suspend fun deleteBed(bedId: String): Result<Unit> = runCatching {
+        db.hostelDao().deleteBed(bedId)
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "BED",
+                entityId = bedId,
+                action = "DELETE",
+                payloadJson = "{}"
+            )
+        )
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun getAllocations(): Result<List<RoomAllocation>> = runCatching {
-        val allocationsDto = supabaseClient.postgrest.from("room_allocations").select().decodeList<RoomAllocationDto>()
-        if (allocationsDto.isEmpty()) return Result.success(emptyList())
+        var allocs = db.allocationDao().getAllAllocations()
+        if (allocs.isEmpty()) {
+            runCatching { syncManager.pullCloudToLocal() }
+            allocs = db.allocationDao().getAllAllocations()
+        }
 
-        val studentIds = allocationsDto.map { it.studentId }.distinct()
-        val bedIds = allocationsDto.map { it.bedId }.distinct()
+        val profiles = db.studentDao().getAllStudentProfiles().associateBy { it.id }
+        val students = db.studentDao().getAllStudents().associateBy { it.id }
+        val beds = db.hostelDao().getAllBeds().associateBy { it.id }
+        val rooms = db.hostelDao().getAllRooms().associateBy { it.id }
+        val floors = db.hostelDao().getAllFloors().associateBy { it.id }
+        val buildings = db.hostelDao().getAllBuildings().associateBy { it.id }
+        val hostels = db.hostelDao().getAllHostels().associateBy { it.id }
 
-        val profiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
-        val students = supabaseClient.postgrest.from("students").select().decodeList<StudentDto>().associateBy { it.id }
-        
-        val beds = supabaseClient.postgrest.from("beds").select().decodeList<BedDto>().associateBy { it.id }
-        val rooms = supabaseClient.postgrest.from("rooms").select().decodeList<RoomDto>().associateBy { it.id }
-        val hostels = supabaseClient.postgrest.from("hostels").select().decodeList<HostelDto>().associateBy { it.id }
-        
-        // Also need mapping from room to floor -> building -> hostel
-        val floors = supabaseClient.postgrest.from("floors").select().decodeList<FloorDto>().associateBy { it.id }
-        val buildings = supabaseClient.postgrest.from("buildings").select().decodeList<BuildingDto>().associateBy { it.id }
-
-        allocationsDto.map { dto ->
+        allocs.map { dto ->
             val student = students[dto.studentId]
             val profile = profiles[dto.studentId]
             val bed = beds[dto.bedId]
@@ -207,31 +375,62 @@ class HostelRepositoryImpl(
         bedId: String,
         notes: String?
     ): Result<Unit> = runCatching {
-        val recorder = ServiceLocator.authRepository.getCurrentProfile().getOrThrow()
-            ?: throw IllegalStateException("User not logged in")
+        val recorder = ServiceLocator.authRepository.getCurrentProfile().getOrNull()
+        val newAllocId = UUID.randomUUID().toString()
+        val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
 
-        // 1. Create allocation record
-        supabaseClient.postgrest.from("room_allocations").insert(
-            buildJsonObject {
-                put("student_id", studentId)
-                put("bed_id", bedId)
-                put("status", "Active")
-                if (notes != null) put("notes", notes)
-                put("recorded_by", recorder.id)
-            }
+        val allocEntity = RoomAllocationEntity(
+            id = newAllocId,
+            studentId = studentId,
+            bedId = bedId,
+            allocatedAt = nowString,
+            status = "Active",
+            notes = notes,
+            recordedBy = recorder?.id
         )
 
-        // 2. Update bed status
-        supabaseClient.postgrest.from("beds").update(
-            mapOf("status" to "Occupied")
-        ) {
-            filter {
-                eq("id", bedId)
-            }
-        }
+        // 1. Insert allocation in Room DB
+        db.allocationDao().insertAllocation(allocEntity)
 
-        // 3. Update room status based on occupancy
+        // 2. Mark bed as Occupied in Room DB
+        db.hostelDao().updateBedStatus(bedId, "Occupied")
+
+        // 3. Update room status in Room DB
         updateRoomStatusFromBeds(bedId)
+
+        // 4. Enqueue Sync Items
+        val allocPayload = buildJsonObject {
+            put("id", newAllocId)
+            put("student_id", studentId)
+            put("bed_id", bedId)
+            put("status", "Active")
+            if (notes != null) put("notes", notes)
+            if (recorder?.id != null) put("recorded_by", recorder.id)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "ALLOCATION",
+                entityId = newAllocId,
+                action = "INSERT",
+                payloadJson = allocPayload
+            )
+        )
+
+        val bedPayload = buildJsonObject {
+            put("status", "Occupied")
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "BED",
+                entityId = bedId,
+                action = "UPDATE",
+                payloadJson = bedPayload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun transferRoom(
@@ -239,99 +438,93 @@ class HostelRepositoryImpl(
         newBedId: String,
         notes: String?
     ): Result<Unit> = runCatching {
-        val recorder = ServiceLocator.authRepository.getCurrentProfile().getOrThrow()
-            ?: throw IllegalStateException("User not logged in")
-
-        // Fetch old allocation
-        val oldAlloc = supabaseClient.postgrest.from("room_allocations").select {
-            filter { eq("id", allocationId) }
-        }.decodeSingle<RoomAllocationDto>()
+        val recorder = ServiceLocator.authRepository.getCurrentProfile().getOrNull()
+        val oldAlloc = db.allocationDao().getAllocationById(allocationId)
+            ?: throw IllegalStateException("Allocation not found")
 
         val oldBedId = oldAlloc.bedId
         val studentId = oldAlloc.studentId
-
         val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
 
-        // 1. Close old allocation
-        supabaseClient.postgrest.from("room_allocations").update(
-            mapOf(
-                "status" to "Transferred",
-                "vacated_at" to nowString
-            )
-        ) {
-            filter { eq("id", allocationId) }
-        }
+        // 1. Close old allocation locally
+        db.allocationDao().updateAllocationStatus(allocationId, "Transferred", nowString)
 
-        // 2. Mark old bed as available
-        supabaseClient.postgrest.from("beds").update(
-            mapOf("status" to "Available")
-        ) {
-            filter { eq("id", oldBedId) }
-        }
+        // 2. Mark old bed available locally
+        db.hostelDao().updateBedStatus(oldBedId, "Available")
 
-        // 3. Create new allocation
-        supabaseClient.postgrest.from("room_allocations").insert(
-            buildJsonObject {
-                put("student_id", studentId)
-                put("bed_id", newBedId)
-                put("status", "Active")
-                put("notes", "Transferred. Notes: ${notes ?: ""}")
-                put("recorded_by", recorder.id)
-            }
+        // 3. Create new allocation locally
+        val newAllocId = UUID.randomUUID().toString()
+        val newAllocEntity = RoomAllocationEntity(
+            id = newAllocId,
+            studentId = studentId,
+            bedId = newBedId,
+            allocatedAt = nowString,
+            status = "Active",
+            notes = "Transferred. Notes: ${notes ?: ""}",
+            recordedBy = recorder?.id
         )
+        db.allocationDao().insertAllocation(newAllocEntity)
 
-        // 4. Mark new bed as occupied
-        supabaseClient.postgrest.from("beds").update(
-            mapOf("status" to "Occupied")
-        ) {
-            filter { eq("id", newBedId) }
-        }
+        // 4. Mark new bed occupied locally
+        db.hostelDao().updateBedStatus(newBedId, "Occupied")
 
-        // Update old room and new room statuses
+        // 5. Update room statuses locally
         updateRoomStatusFromBeds(oldBedId)
         updateRoomStatusFromBeds(newBedId)
+
+        // Queue Sync Queue items
+        val oldAllocPayload = buildJsonObject {
+            put("status", "Transferred")
+            put("vacated_at", nowString)
+        }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "ALLOCATION", entityId = allocationId, action = "UPDATE", payloadJson = oldAllocPayload))
+
+        val oldBedPayload = buildJsonObject { put("status", "Available") }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "BED", entityId = oldBedId, action = "UPDATE", payloadJson = oldBedPayload))
+
+        val newAllocPayload = buildJsonObject {
+            put("id", newAllocId)
+            put("student_id", studentId)
+            put("bed_id", newBedId)
+            put("status", "Active")
+            put("notes", "Transferred. Notes: ${notes ?: ""}")
+            if (recorder?.id != null) put("recorded_by", recorder.id)
+        }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "ALLOCATION", entityId = newAllocId, action = "INSERT", payloadJson = newAllocPayload))
+
+        val newBedPayload = buildJsonObject { put("status", "Occupied") }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "BED", entityId = newBedId, action = "UPDATE", payloadJson = newBedPayload))
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun vacateRoom(allocationId: String): Result<Unit> = runCatching {
-        val oldAlloc = supabaseClient.postgrest.from("room_allocations").select {
-            filter { eq("id", allocationId) }
-        }.decodeSingle<RoomAllocationDto>()
+        val oldAlloc = db.allocationDao().getAllocationById(allocationId)
+            ?: throw IllegalStateException("Allocation not found")
 
         val oldBedId = oldAlloc.bedId
         val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
 
-        // 1. Close allocation
-        supabaseClient.postgrest.from("room_allocations").update(
-            mapOf(
-                "status" to "Vacated",
-                "vacated_at" to nowString
-            )
-        ) {
-            filter { eq("id", allocationId) }
-        }
-
-        // 2. Mark bed as available
-        supabaseClient.postgrest.from("beds").update(
-            mapOf("status" to "Available")
-        ) {
-            filter { eq("id", oldBedId) }
-        }
-
-        // 3. Update student status in profiles if they are fully leaving
-        // (Warden will decide to mark student vacated separately, or we keep them active)
-        
+        db.allocationDao().updateAllocationStatus(allocationId, "Vacated", nowString)
+        db.hostelDao().updateBedStatus(oldBedId, "Available")
         updateRoomStatusFromBeds(oldBedId)
+
+        val allocPayload = buildJsonObject {
+            put("status", "Vacated")
+            put("vacated_at", nowString)
+        }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "ALLOCATION", entityId = allocationId, action = "UPDATE", payloadJson = allocPayload))
+
+        val bedPayload = buildJsonObject { put("status", "Available") }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "BED", entityId = oldBedId, action = "UPDATE", payloadJson = bedPayload))
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     private suspend fun updateRoomStatusFromBeds(bedId: String) {
-        val bed = supabaseClient.postgrest.from("beds").select {
-            filter { eq("id", bedId) }
-        }.decodeSingle<BedDto>()
-        
+        val bed = db.hostelDao().getBedById(bedId) ?: return
         val roomId = bed.roomId
-        val roomBeds = supabaseClient.postgrest.from("beds").select {
-            filter { eq("room_id", roomId) }
-        }.decodeList<BedDto>()
+        val roomBeds = db.hostelDao().getBedsForRoom(roomId)
 
         val totalBeds = roomBeds.size
         val occupiedBeds = roomBeds.count { it.status == "Occupied" }
@@ -342,36 +535,32 @@ class HostelRepositoryImpl(
             else -> "Partially occupied"
         }
 
-        supabaseClient.postgrest.from("rooms").update(
-            mapOf("status" to newStatus)
-        ) {
-            filter { eq("id", roomId) }
-        }
+        db.hostelDao().updateRoomStatus(roomId, newStatus)
+        val roomPayload = buildJsonObject { put("status", newStatus) }.toString()
+        db.syncQueueDao().enqueueSyncItem(SyncQueueEntity(entityType = "ROOM", entityId = roomId, action = "UPDATE", payloadJson = roomPayload))
     }
 
     override suspend fun getStudents(
         searchQuery: String?,
         statusFilter: String?
     ): Result<List<Student>> = runCatching {
-        // Query profiles with role STUDENT
-        var profilesQuery = supabaseClient.postgrest.from("profiles").select {
-            filter {
-                eq("role", "STUDENT")
-            }
-        }.decodeList<ProfileDto>()
+        var profilesList = db.studentDao().getAllStudentProfiles()
+        var studentDtos = db.studentDao().getAllStudents().associateBy { it.id }
+
+        if (profilesList.isEmpty()) {
+            runCatching { syncManager.pullCloudToLocal() }
+            profilesList = db.studentDao().getAllStudentProfiles()
+            studentDtos = db.studentDao().getAllStudents().associateBy { it.id }
+        }
 
         if (!searchQuery.isNullOrBlank()) {
-            profilesQuery = profilesQuery.filter {
+            profilesList = profilesList.filter {
                 it.fullName.contains(searchQuery, ignoreCase = true) || it.email.contains(searchQuery, ignoreCase = true)
             }
         }
 
-        val studentDtos = supabaseClient.postgrest.from("students").select().decodeList<StudentDto>().associateBy { it.id }
-
-        val studentsList = profilesQuery.mapNotNull { pDto ->
+        profilesList.mapNotNull { pDto ->
             val sDto = studentDtos[pDto.id] ?: return@mapNotNull null
-            
-            // Check status filter
             if (statusFilter != null && sDto.hostelStatus != statusFilter) {
                 return@mapNotNull null
             }
@@ -405,18 +594,13 @@ class HostelRepositoryImpl(
                 leavingDate = sDto.leavingDate
             )
         }
-
-        studentsList
     }
 
     override suspend fun getStudentDetails(studentId: String): Result<Student> = runCatching {
-        val pDto = supabaseClient.postgrest.from("profiles").select {
-            filter { eq("id", studentId) }
-        }.decodeSingle<ProfileDto>()
-
-        val sDto = supabaseClient.postgrest.from("students").select {
-            filter { eq("id", studentId) }
-        }.decodeSingle<StudentDto>()
+        val pDto = db.studentDao().getProfileById(studentId)
+            ?: throw IllegalStateException("Profile not found locally")
+        val sDto = db.studentDao().getStudentById(studentId)
+            ?: throw IllegalStateException("Student not found locally")
 
         val profile = Profile(
             id = pDto.id,
@@ -453,120 +637,182 @@ class HostelRepositoryImpl(
         email: String,
         password: String
     ): Result<Unit> = runCatching {
-        val adminProfile = ServiceLocator.authRepository.getCurrentProfile().getOrThrow()
-            ?: throw IllegalStateException("User not logged in")
-        val orgId = adminProfile.organizationId
-            ?: throw IllegalStateException("User has no organization")
+        val adminProfile = ServiceLocator.authRepository.getCurrentProfile().getOrNull()
+        val orgId = adminProfile?.organizationId ?: "org_default"
 
-        val newUser = supabaseClient.auth.signUpWith(Email) {
-            this.email = email
-            this.password = password
-            // Custom user metadata which handle_new_user trigger maps to profiles table!
-            data = buildJsonObject {
-                put("full_name", student.profile.fullName)
-                put("role", "STUDENT")
-                put("organization_id", orgId)
+        var newUserId = UUID.randomUUID().toString()
+
+        // Try Supabase auth signup if online
+        val remoteSignUp = runCatching {
+            val newUser = supabaseClient.auth.signUpWith(Email) {
+                this.email = email
+                this.password = password
+                data = buildJsonObject {
+                    put("full_name", student.profile.fullName)
+                    put("role", "STUDENT")
+                    put("organization_id", orgId)
+                }
             }
+            newUser?.id
         }
-        
-        val newUserId = newUser?.id ?: throw IllegalStateException("Failed to retrieve new user ID")
 
-        // 2. Insert detailed student information
-        supabaseClient.postgrest.from("students").insert(
-            buildJsonObject {
-                put("id", newUserId)
-                put("student_id_number", student.studentIdNumber)
-                if (student.dob != null) put("dob", student.dob)
-                if (student.gender != null) put("gender", student.gender)
-                if (student.course != null) put("course", student.course)
-                if (student.department != null) put("department", student.department)
-                if (student.academicYear != null) put("academic_year", student.academicYear)
-                if (student.parentName != null) put("parent_name", student.parentName)
-                if (student.parentPhone != null) put("parent_phone", student.parentPhone)
-                if (student.emergencyContact != null) put("emergency_contact", student.emergencyContact)
-                if (student.address != null) put("address", student.address)
-                put("hostel_status", "Active")
-            }
+        if (remoteSignUp.isSuccess && remoteSignUp.getOrNull() != null) {
+            newUserId = remoteSignUp.getOrNull()!!
+        }
+
+        val profileEntity = ProfileEntity(
+            id = newUserId,
+            organizationId = orgId,
+            role = "STUDENT",
+            fullName = student.profile.fullName,
+            email = email,
+            phone = student.profile.phone,
+            avatarUrl = student.profile.avatarUrl
         )
+
+        val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val studentEntity = StudentEntity(
+            id = newUserId,
+            studentIdNumber = student.studentIdNumber,
+            dob = student.dob,
+            gender = student.gender,
+            course = student.course,
+            department = student.department,
+            academicYear = student.academicYear,
+            parentName = student.parentName,
+            parentPhone = student.parentPhone,
+            emergencyContact = student.emergencyContact,
+            address = student.address,
+            admissionDate = todayDate,
+            hostelStatus = "Active"
+        )
+
+        db.studentDao().insertProfile(profileEntity)
+        db.studentDao().insertStudent(studentEntity)
+
+        val studentPayload = buildJsonObject {
+            put("id", newUserId)
+            put("student_id_number", student.studentIdNumber)
+            if (student.dob != null) put("dob", student.dob)
+            if (student.gender != null) put("gender", student.gender)
+            if (student.course != null) put("course", student.course)
+            if (student.department != null) put("department", student.department)
+            if (student.academicYear != null) put("academic_year", student.academicYear)
+            if (student.parentName != null) put("parent_name", student.parentName)
+            if (student.parentPhone != null) put("parent_phone", student.parentPhone)
+            if (student.emergencyContact != null) put("emergency_contact", student.emergencyContact)
+            if (student.address != null) put("address", student.address)
+            put("hostel_status", "Active")
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "STUDENT",
+                entityId = newUserId,
+                action = "INSERT",
+                payloadJson = studentPayload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun updateStudent(student: Student): Result<Unit> = runCatching {
-        // 1. Update Profile (Name/Phone)
-        supabaseClient.postgrest.from("profiles").update(
-            buildJsonObject {
-                put("full_name", student.profile.fullName)
-                put("phone", student.profile.phone)
-            }
-        ) {
-            filter { eq("id", student.id) }
+        val pDto = db.studentDao().getProfileById(student.id)
+        if (pDto != null) {
+            val updatedProfile = pDto.copy(
+                fullName = student.profile.fullName,
+                phone = student.profile.phone
+            )
+            db.studentDao().insertProfile(updatedProfile)
         }
 
-        // 2. Update Student Info
-        supabaseClient.postgrest.from("students").update(
-            buildJsonObject {
-                if (student.dob != null) put("dob", student.dob)
-                if (student.gender != null) put("gender", student.gender)
-                if (student.course != null) put("course", student.course)
-                if (student.department != null) put("department", student.department)
-                if (student.academicYear != null) put("academic_year", student.academicYear)
-                if (student.parentName != null) put("parent_name", student.parentName)
-                if (student.parentPhone != null) put("parent_phone", student.parentPhone)
-                if (student.emergencyContact != null) put("emergency_contact", student.emergencyContact)
-                if (student.address != null) put("address", student.address)
-                put("hostel_status", student.hostelStatus)
-            }
-        ) {
-            filter { eq("id", student.id) }
+        val sDto = db.studentDao().getStudentById(student.id)
+        if (sDto != null) {
+            val updatedStudent = sDto.copy(
+                dob = student.dob ?: sDto.dob,
+                gender = student.gender ?: sDto.gender,
+                course = student.course ?: sDto.course,
+                department = student.department ?: sDto.department,
+                academicYear = student.academicYear ?: sDto.academicYear,
+                parentName = student.parentName ?: sDto.parentName,
+                parentPhone = student.parentPhone ?: sDto.parentPhone,
+                emergencyContact = student.emergencyContact ?: sDto.emergencyContact,
+                address = student.address ?: sDto.address,
+                hostelStatus = student.hostelStatus
+            )
+            db.studentDao().insertStudent(updatedStudent)
         }
+
+        val studentPayload = buildJsonObject {
+            if (student.dob != null) put("dob", student.dob)
+            if (student.gender != null) put("gender", student.gender)
+            if (student.course != null) put("course", student.course)
+            if (student.department != null) put("department", student.department)
+            if (student.academicYear != null) put("academic_year", student.academicYear)
+            if (student.parentName != null) put("parent_name", student.parentName)
+            if (student.parentPhone != null) put("parent_phone", student.parentPhone)
+            if (student.emergencyContact != null) put("emergency_contact", student.emergencyContact)
+            if (student.address != null) put("address", student.address)
+            put("hostel_status", student.hostelStatus)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "STUDENT",
+                entityId = student.id,
+                action = "UPDATE",
+                payloadJson = studentPayload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun vacateStudent(studentId: String): Result<Unit> = runCatching {
-        // 1. Set status to Vacated in Students
-        supabaseClient.postgrest.from("students").update(
-            mapOf(
-                "hostel_status" to "Vacated",
-                "leaving_date" to SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            )
-        ) {
-            filter { eq("id", studentId) }
-        }
+        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        db.studentDao().vacateStudent(studentId, "Vacated", todayStr)
 
-        // 2. Release room allocation if active
-        val activeAlloc = supabaseClient.postgrest.from("room_allocations").select {
-            filter {
-                eq("student_id", studentId)
-                eq("status", "Active")
-            }
-        }.decodeSingleOrNull<RoomAllocationDto>()
-
+        val activeAlloc = db.allocationDao().getActiveAllocationForStudent(studentId)
         if (activeAlloc != null) {
-            vacateRoom(activeAlloc.id).getOrThrow()
+            vacateRoom(activeAlloc.id)
         }
+
+        val studentPayload = buildJsonObject {
+            put("hostel_status", "Vacated")
+            put("leaving_date", todayStr)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "STUDENT",
+                entityId = studentId,
+                action = "UPDATE",
+                payloadJson = studentPayload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun getDashboardStats(): Result<Map<String, Any>> = runCatching {
-        // Compute dashboard analytics based on database values
         val hostels = getHostels().getOrThrow()
-        
-        val rooms = supabaseClient.postgrest.from("rooms").select().decodeList<RoomDto>()
-        val beds = supabaseClient.postgrest.from("beds").select().decodeList<BedDto>()
-        val students = supabaseClient.postgrest.from("students").select {
-            filter { eq("hostel_status", "Active") }
-        }.decodeList<StudentDto>()
+        val rooms = db.hostelDao().getAllRooms()
+        val beds = db.hostelDao().getAllBeds()
+        val activeStudents = db.studentDao().getAllStudents().filter { it.hostelStatus == "Active" }
 
-        val totalStudents = students.size
+        val totalStudents = activeStudents.size
         val totalRooms = rooms.size
         val totalBeds = beds.size
         val occupiedBeds = beds.count { it.status == "Occupied" }
         val availableBeds = totalBeds - occupiedBeds
         val occupancyPct = if (totalBeds > 0) (occupiedBeds.toDouble() / totalBeds * 100).toInt() else 0
 
-        // Invoices and complaints counts
-        val complaints = supabaseClient.postgrest.from("complaints").select().decodeList<ComplaintDto>()
+        val complaints = db.complaintDao().getAllComplaints()
         val pendingComplaints = complaints.count { it.status != "Resolved" && it.status != "Closed" }
         val emergencyComplaints = complaints.count { it.priority == "Emergency" && it.status != "Resolved" && it.status != "Closed" }
 
-        val invoices = supabaseClient.postgrest.from("fee_invoices").select().decodeList<FeeInvoiceDto>()
+        val invoices = db.financeDao().getAllInvoices()
         val pendingFees = invoices.filter { it.paymentStatus != "Paid" && it.paymentStatus != "Waived" }.sumOf { it.balance }
 
         mapOf(
@@ -581,5 +827,159 @@ class HostelRepositoryImpl(
             "emergencyComplaints" to emergencyComplaints,
             "pendingFees" to pendingFees
         )
+    }
+
+    override suspend fun updateHostelPaymentConfig(
+        hostelId: String,
+        upiId: String,
+        monthlyFee: Double,
+        advanceDeposit: Double
+    ): Result<Unit> = runCatching {
+        val profile = ServiceLocator.authRepository.getCurrentProfile().getOrNull()
+        val rawOrgId = profile?.organizationId ?: ""
+        val orgId = if (isUuid(rawOrgId)) rawOrgId else "00000000-0000-0000-0000-000000000000"
+
+        var targetHostelId = if (isUuid(hostelId)) hostelId else UUID.randomUUID().toString()
+
+        // 1. Primary Save via SECURITY DEFINER RPC (bypasses RLS issues)
+        var remoteSavedId: String? = null
+        try {
+            val params = buildJsonObject {
+                put("p_hostel_id", targetHostelId)
+                put("p_upi_id", upiId)
+                put("p_monthly_fee", monthlyFee)
+                put("p_advance_deposit", advanceDeposit)
+            }
+            val rpcResult = supabaseClient.postgrest.rpc("save_hostel_payment_config", params).decodeAs<kotlinx.serialization.json.JsonObject>()
+            val hostelIdVal = rpcResult["hostel_id"]?.toString()?.replace("\"", "")
+            if (!hostelIdVal.isNullOrBlank()) {
+                remoteSavedId = hostelIdVal
+            }
+        } catch (e: Exception) {
+            println("RPC save_hostel_payment_config error: ${e.message}")
+        }
+
+        if (!remoteSavedId.isNullOrBlank()) {
+            targetHostelId = remoteSavedId
+        }
+
+        // 2. Secondary Direct Update on public.hostels table in Supabase
+        try {
+            val updatePayload = buildJsonObject {
+                put("upi_id", upiId)
+                put("monthly_fee", monthlyFee)
+                put("advance_deposit", advanceDeposit)
+            }
+            supabaseClient.postgrest.from("hostels").update(updatePayload)
+        } catch (e: Exception) {
+            println("Direct update hostels table note: ${e.message}")
+        }
+
+        // 3. Update local Room DB with final targetHostelId
+        val localHostel = db.hostelDao().getAllHostels().find { it.id == hostelId || it.id == targetHostelId } 
+            ?: db.hostelDao().getAllHostels().firstOrNull()
+
+        val updatedEntity = HostelEntity(
+            id = targetHostelId,
+            organizationId = orgId,
+            name = localHostel?.name ?: "Main Campus Hostel",
+            address = localHostel?.address,
+            upiId = upiId,
+            monthlyFee = monthlyFee,
+            advanceDeposit = advanceDeposit
+        )
+        db.hostelDao().insertHostel(updatedEntity)
+    }
+
+    private fun isUuid(str: String): Boolean {
+        if (str.isBlank()) return false
+        return try {
+            UUID.fromString(str)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override suspend fun getPendingSelfRegistrations(): Result<List<StudentSelfRegistration>> = runCatching {
+        val dtos = supabaseClient.postgrest.from("student_self_registrations")
+            .select { filter { eq("status", "Pending") } }
+            .decodeList<StudentSelfRegistrationDto>()
+        dtos.map { dto ->
+            StudentSelfRegistration(
+                id = dto.id,
+                hostelId = dto.hostelId,
+                fullName = dto.fullName,
+                email = dto.email,
+                phone = dto.phone,
+                studentIdNumber = dto.studentIdNumber,
+                aadhaarNumber = dto.aadhaarNumber,
+                roomNumber = dto.roomNumber,
+                bedNumber = dto.bedNumber,
+                status = dto.status,
+                notes = dto.notes,
+                createdAt = dto.createdAt
+            )
+        }
+    }
+
+    override suspend fun updateSelfRegistrationStatus(id: String, status: String): Result<Unit> = runCatching {
+        // 1. Try SECURITY DEFINER RPC first (guarantees bypass of RLS issues & allocates bed in DB)
+        try {
+            val params = buildJsonObject {
+                put("p_reg_id", id)
+                put("p_status", status)
+            }
+            supabaseClient.postgrest.rpc("approve_student_self_registration", params)
+        } catch (e: Exception) {
+            println("RPC approve_student_self_registration note: ${e.message}")
+        }
+
+        // 2. Fallback: Direct PostgREST table update
+        val updatePayload = buildJsonObject {
+            put("status", status)
+        }
+        supabaseClient.postgrest.from("student_self_registrations").update(updatePayload) {
+            filter { eq("id", id) }
+        }
+
+        // 3. Trigger auto sync to fetch updated bed statuses & allocations from Supabase into local Room DB
+        try {
+            syncManager.triggerAutoSyncIfEnabled()
+        } catch (e: Exception) {
+            println("Sync after approval note: ${e.message}")
+        }
+    }
+
+    override suspend fun getMonthlyPaymentSubmissions(): Result<List<MonthlyPaymentSubmission>> = runCatching {
+        val dtos = supabaseClient.postgrest.from("monthly_payment_submissions")
+            .select { filter { eq("status", "Pending") } }
+            .decodeList<MonthlyPaymentSubmissionDto>()
+        dtos.map { dto ->
+            MonthlyPaymentSubmission(
+                id = dto.id,
+                hostelId = dto.hostelId,
+                studentId = dto.studentId,
+                email = dto.email,
+                fullName = dto.fullName,
+                roomNumber = dto.roomNumber,
+                bedNumber = dto.bedNumber,
+                amount = dto.amount,
+                utrNumber = dto.utrNumber,
+                billingMonth = dto.billingMonth,
+                status = dto.status,
+                notes = dto.notes,
+                createdAt = dto.createdAt
+            )
+        }
+    }
+
+    override suspend fun verifyMonthlyPayment(id: String, status: String): Result<Unit> = runCatching {
+        val updatePayload = buildJsonObject {
+            put("status", status)
+        }
+        supabaseClient.postgrest.from("monthly_payment_submissions").update(updatePayload) {
+            filter { eq("id", id) }
+        }
     }
 }

@@ -1,8 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("kotlin-kapt")
 }
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
+val supabaseUrl = localProperties.getProperty("SUPABASE_URL") ?: "https://jtxcqovfakumoaxgwumt.supabase.co"
+val supabaseAnonKey = localProperties.getProperty("SUPABASE_ANON_KEY") ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0eGNxb3ZmYWt1bW9heGd3dW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjE1MTYsImV4cCI6MjEwMzYzNzUxNn0.FmE7Ay0ere3u-2vG9VaMYQ1OZfviqmcIWW6pe5yZqJ4"
 
 android {
     namespace = "com.hostel.management"
@@ -14,6 +26,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -39,7 +54,9 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
@@ -77,6 +94,12 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:realtime-kt:2.1.2")
     implementation("io.ktor:ktor-client-android:2.3.8")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+
+    // Room Database
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
 
     // Coil (Image Loading)
     implementation("io.coil-kt:coil-compose:2.5.0")

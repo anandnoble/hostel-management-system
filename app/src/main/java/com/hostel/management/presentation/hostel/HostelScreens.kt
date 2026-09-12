@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,6 +44,10 @@ fun HostelStructureScreen(
     var selectedHostel by remember { mutableStateOf<Hostel?>(null) }
     var selectedBuilding by remember { mutableStateOf<Building?>(null) }
 
+    var showAddHostelDialog by remember { mutableStateOf(false) }
+    var showAddBuildingDialog by remember { mutableStateOf(false) }
+    var showAddFloorDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         hostelViewModel.loadHostels()
     }
@@ -53,7 +58,17 @@ fun HostelStructureScreen(
                 title = { Text("Hostel Structure") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    Button(
+                        onClick = { showAddHostelDialog = true },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Hostel", fontSize = 12.sp)
                     }
                 }
             )
@@ -71,31 +86,62 @@ fun HostelStructureScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                Text("Select Hostel", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Select Hostel", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = { showAddHostelDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("New Hostel", fontSize = 12.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Hostels Row/List
                 LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     item {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                        ) {
-                            hostels.forEach { hostel ->
-                                val isSelected = selectedHostel?.id == hostel.id
-                                Button(
-                                    onClick = {
-                                        selectedHostel = hostel
-                                        selectedBuilding = null
-                                        hostelViewModel.loadBuildings(hostel.id)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
+                        if (hostels.isEmpty()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Text(hostel.name)
+                                    Text("No hostels created yet", color = Color.Gray, fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { showAddHostelDialog = true }) {
+                                        Icon(Icons.Default.Add, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Create First Hostel")
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                            ) {
+                                hostels.forEach { hostel ->
+                                    val isSelected = selectedHostel?.id == hostel.id
+                                    Button(
+                                        onClick = {
+                                            selectedHostel = hostel
+                                            selectedBuilding = null
+                                            hostelViewModel.loadBuildings(hostel.id)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(hostel.name)
+                                    }
                                 }
                             }
                         }
@@ -103,13 +149,33 @@ fun HostelStructureScreen(
 
                     if (selectedHostel != null) {
                         item {
-                            Text("Select Block/Building", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Select Block/Building", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                TextButton(onClick = { showAddBuildingDialog = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("Add Block", fontSize = 12.sp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
 
                         if (buildings.isEmpty() && !loading) {
                             item {
-                                Text("No blocks created for this hostel.", color = Color.Gray, modifier = Modifier.padding(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("No blocks created for this hostel.", color = Color.Gray, fontSize = 12.sp)
+                                    OutlinedButton(onClick = { showAddBuildingDialog = true }) {
+                                        Text("Create Block", fontSize = 12.sp)
+                                    }
+                                }
                             }
                         } else {
                             item {
@@ -140,13 +206,33 @@ fun HostelStructureScreen(
 
                     if (selectedBuilding != null) {
                         item {
-                            Text("Select Floor", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Select Floor", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                TextButton(onClick = { showAddFloorDialog = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("Add Floor", fontSize = 12.sp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
 
                         if (floors.isEmpty() && !loading) {
                             item {
-                                Text("No floors created for this block.", color = Color.Gray, modifier = Modifier.padding(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("No floors created for this block.", color = Color.Gray, fontSize = 12.sp)
+                                    OutlinedButton(onClick = { showAddFloorDialog = true }) {
+                                        Text("Create Floor", fontSize = 12.sp)
+                                    }
+                                }
                             }
                         } else {
                             items(floors) { floor ->
@@ -177,6 +263,125 @@ fun HostelStructureScreen(
             }
         }
     }
+
+    // Create Hostel Dialog
+    if (showAddHostelDialog) {
+        var name by remember { mutableStateOf("") }
+        var address by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddHostelDialog = false },
+            title = { Text("Create New Hostel Property") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Hostel Name *") },
+                        placeholder = { Text("e.g. Sunrise Boys Hostel") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text("Address / Location") },
+                        placeholder = { Text("e.g. Campus North Gate") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        hostelViewModel.createHostel(name, address)
+                        showAddHostelDialog = false
+                    },
+                    enabled = name.isNotBlank()
+                ) {
+                    Text("Create Hostel")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddHostelDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Create Building / Block Dialog
+    if (showAddBuildingDialog && selectedHostel != null) {
+        var blockName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddBuildingDialog = false },
+            title = { Text("Add Block / Building") },
+            text = {
+                OutlinedTextField(
+                    value = blockName,
+                    onValueChange = { blockName = it },
+                    label = { Text("Block Name *") },
+                    placeholder = { Text("e.g. Block A or Girls Wing") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        hostelViewModel.createBuilding(selectedHostel!!.id, blockName)
+                        showAddBuildingDialog = false
+                    },
+                    enabled = blockName.isNotBlank()
+                ) {
+                    Text("Create Block")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddBuildingDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Create Floor Dialog
+    if (showAddFloorDialog && selectedBuilding != null) {
+        var floorNumText by remember { mutableStateOf((floors.size + 1).toString()) }
+
+        AlertDialog(
+            onDismissRequest = { showAddFloorDialog = false },
+            title = { Text("Add Floor") },
+            text = {
+                OutlinedTextField(
+                    value = floorNumText,
+                    onValueChange = { floorNumText = it },
+                    label = { Text("Floor Number (e.g. 0 for Ground, 1 for 1st)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val num = floorNumText.toIntOrNull() ?: 1
+                        hostelViewModel.createFloor(selectedBuilding!!.id, num)
+                        showAddFloorDialog = false
+                    },
+                    enabled = floorNumText.isNotBlank()
+                ) {
+                    Text("Create Floor")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddFloorDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -192,7 +397,10 @@ fun RoomManagementScreen(
     val allocations by hostelViewModel.allocations.collectAsState()
     val loading by hostelViewModel.loading.collectAsState()
 
+    var searchQuery by remember { mutableStateOf("") }
     var showRoomDetailsDialog by remember { mutableStateOf<Room?>(null) }
+    var selectedBedDetails by remember { mutableStateOf<RoomAllocation?>(null) }
+    var showAddRoomDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(floorId) {
         hostelViewModel.loadRooms(floorId)
@@ -202,10 +410,20 @@ fun RoomManagementScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Rooms Map & Occupancy") },
+                title = { Text("Rooms Map & Occupancy (3x3 Grid)") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    Button(
+                        onClick = { showAddRoomDialog = true },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Room", fontSize = 12.sp)
                     }
                 }
             )
@@ -216,249 +434,223 @@ fun RoomManagementScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
-                .padding(16.dp)
+                .padding(12.dp)
         ) {
-            if (loading && rooms.isEmpty()) {
+            // ── TOP SEARCH BAR FOR DIRECT STUDENT BED LOOKUP ──
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("🔍 Search student name to view assigned bed (Red/Green)...", fontSize = 12.sp) },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.Gray)
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+
+            if (searchQuery.isNotBlank()) {
+                // ── DIRECT STUDENT SEARCH RESULTS GRID (3x3) ──
+                val filteredAllocations = allocations.filter {
+                    it.studentName?.contains(searchQuery, ignoreCase = true) == true ||
+                    it.roomNumber?.contains(searchQuery, ignoreCase = true) == true ||
+                    it.bedNumber?.contains(searchQuery, ignoreCase = true) == true
+                }
+
+                Text(
+                    text = "Matching Student Beds (${filteredAllocations.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                if (filteredAllocations.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("No matching student bed allocations found.", color = Color.Gray, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(filteredAllocations) { alloc ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedBedDetails = alloc },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFF44336))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .background(Color(0xFFF44336).copy(alpha = 0.15f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("●", color = Color(0xFFF44336), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = alloc.studentName ?: "Student",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "${alloc.roomNumber ?: "Room"} · ${alloc.bedNumber ?: "Bed"}",
+                                        fontSize = 9.sp,
+                                        color = Color.Gray
+                                    )
+                                    Text(
+                                        text = "OCCUPIED",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFF44336)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (loading && rooms.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             } else if (rooms.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No rooms in this floor.", color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No rooms created on this floor yet.", color = Color.Gray, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = { showAddRoomDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Create First Room")
+                        }
+                    }
                 }
             } else {
-                // 1. FLOOR OVERVIEW CAPACITY MAP (Warden/Admin Quick Scan)
+                // 1. FLOOR OVERVIEW CAPACITY MAP
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp),
+                        .padding(bottom = 12.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Floor Capacity Quick Scan",
+                                text = "Floor Capacity Scan",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             val totalBeds = rooms.sumOf { it.capacity }
                             val occupiedBeds = rooms.sumOf { it.occupiedBedsCount }
                             val availableBeds = totalBeds - occupiedBeds
                             Text(
-                                text = "$availableBeds Available • $occupiedBeds Occupied",
-                                fontSize = 11.sp,
+                                text = "$availableBeds Avail • $occupiedBeds Occ",
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (availableBeds > 0) Color(0xFF4CAF50) else Color(0xFFF44336)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Horizontal list of rooms and their compact bed status slots
-                        androidx.compose.foundation.lazy.LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(rooms) { room ->
-                                val isRoomFull = room.occupiedBedsCount == room.capacity
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isRoomFull) Color(0xFFF44336).copy(alpha = 0.4f) else Color(0xFF4CAF50).copy(alpha = 0.4f)
-                                    )
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(8.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(
-                                            text = room.roomNumber,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            if (room.beds.isNotEmpty()) {
-                                                room.beds.forEach { bed ->
-                                                    val color = when (bed.status) {
-                                                        "Available" -> Color(0xFF4CAF50)
-                                                        "Occupied" -> Color(0xFFF44336)
-                                                        "Maintenance" -> Color(0xFF9E9E9E)
-                                                        "Inactive" -> Color(0xFF333333)
-                                                        "Reserved" -> Color(0xFF2196F3)
-                                                        else -> Color(0xFF9E9E9E)
-                                                    }
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(10.dp)
-                                                            .background(color, RoundedCornerShape(2.dp))
-                                                    )
-                                                }
-                                            } else {
-                                                // Fallback to capacity count if beds not loaded yet
-                                                repeat(room.capacity) { idx ->
-                                                    val isOccupied = idx < room.occupiedBedsCount
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(10.dp)
-                                                            .background(if (isOccupied) Color(0xFFF44336) else Color(0xFF4CAF50), RoundedCornerShape(2.dp))
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = if (isRoomFull) "FULL" else "${room.capacity - room.occupiedBedsCount} Avail",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (isRoomFull) Color(0xFFF44336) else Color(0xFF4CAF50)
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
-                // 2. DETAILED ROOMS GRID
+                // 2. DETAILED ROOMS GRID (3x3 COMPACT GRID)
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    columns = GridCells.Fixed(3),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(rooms) { room ->
                         val statusColor = when (room.status) {
                             "Available" -> Color(0xFF4CAF50)
                             "Partially occupied" -> Color(0xFF2196F3)
-                            "Full" -> Color(0xFFFF9800)
-                            "Maintenance" -> Color(0xFFF44336)
+                            "Full" -> Color(0xFFF44336)
                             else -> Color(0xFF9E9E9E)
                         }
 
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.5.dp, statusColor.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                                .border(1.dp, statusColor.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
                                 .clickable {
                                     showRoomDetailsDialog = room
                                     hostelViewModel.loadBeds(room.id)
                                 },
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(16.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
+                            Column(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Room ${room.roomNumber}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                // Visual Bed Map Icons (3x3 style inside room card)
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "Room ${room.roomNumber}",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
-                                    )
-                                    Text(
-                                        text = room.status.uppercase(),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = statusColor,
-                                        modifier = Modifier
-                                            .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = room.roomType,
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
-                                )
-
-                                Spacer(modifier = Modifier.height(10.dp))
-                                
-                                // Visual Bed Map Row inside room card
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
                                     if (room.beds.isNotEmpty()) {
-                                        room.beds.forEach { bed ->
-                                            val color = when (bed.status) {
-                                                "Available" -> Color(0xFF4CAF50)
-                                                "Occupied" -> Color(0xFFF44336)
-                                                "Maintenance" -> Color(0xFF9E9E9E)
-                                                "Inactive" -> Color(0xFF333333)
-                                                "Reserved" -> Color(0xFF2196F3)
-                                                else -> Color(0xFF9E9E9E)
-                                            }
-                                            val symbol = when (bed.status) {
-                                                "Available" -> "✓"
-                                                "Occupied" -> "●"
-                                                "Maintenance" -> "⚙"
-                                                "Inactive" -> "🚫"
-                                                "Reserved" -> "🔒"
-                                                else -> "?"
-                                            }
+                                        room.beds.take(3).forEach { bed ->
+                                            val color = if (bed.status == "Occupied") Color(0xFFF44336) else Color(0xFF4CAF50)
                                             Box(
                                                 modifier = Modifier
-                                                    .size(22.dp)
-                                                    .background(color.copy(alpha = 0.12f), RoundedCornerShape(5.dp))
-                                                    .border(1.dp, color, RoundedCornerShape(5.dp)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = symbol,
-                                                    color = color,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                                    .size(10.dp)
+                                                    .background(color, RoundedCornerShape(2.dp))
+                                            )
                                         }
                                     } else {
-                                        // Fallback if beds lists are not loaded yet
-                                        repeat(room.capacity) { idx ->
+                                        repeat(minOf(room.capacity, 3)) { idx ->
                                             val isOccupied = idx < room.occupiedBedsCount
-                                            val color = if (isOccupied) Color(0xFFF44336) else Color(0xFF4CAF50)
-                                            val symbol = if (isOccupied) "●" else "✓"
                                             Box(
                                                 modifier = Modifier
-                                                    .size(22.dp)
-                                                    .background(color.copy(alpha = 0.12f), RoundedCornerShape(5.dp))
-                                                    .border(1.dp, color, RoundedCornerShape(5.dp)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = symbol,
-                                                    color = color,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                                    .size(10.dp)
+                                                    .background(if (isOccupied) Color(0xFFF44336) else Color(0xFF4CAF50), RoundedCornerShape(2.dp))
+                                            )
                                         }
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(10.dp))
-                                
+                                Spacer(modifier = Modifier.height(4.dp))
+
                                 val available = room.capacity - room.occupiedBedsCount
                                 Text(
-                                    text = if (available == 0) "FULL" else "$available Avail • ${room.occupiedBedsCount} Occ",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = if (available == 0) "FULL" else "$available Avail",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (available == 0) Color(0xFFF44336) else Color(0xFF4CAF50)
                                 )
                             }
                         }
@@ -467,7 +659,90 @@ fun RoomManagementScreen(
             }
         }
 
-        // Room Details & Beds Modal Dialog
+        // ── OCCUPIED BED DETAILS MODAL DIALOG (PHOTO, AADHAAR, PAYMENT HISTORY) ──
+        if (selectedBedDetails != null) {
+            val alloc = selectedBedDetails!!
+            AlertDialog(
+                onDismissRequest = { selectedBedDetails = null },
+                confirmButton = {
+                    TextButton(onClick = { selectedBedDetails = null }) {
+                        Text("Close")
+                    }
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(alloc.studentName ?: "Student Details", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Room ${alloc.roomNumber ?: "101"} · Bed ${alloc.bedNumber ?: "A"}", fontSize = 12.sp, color = Color.Gray)
+                        }
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        HorizontalDivider()
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Allocated Bed Status:", fontSize = 12.sp, color = Color.Gray)
+                            Text("OCCUPIED (RED)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF44336))
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Roll / Student ID:", fontSize = 12.sp, color = Color.Gray)
+                            Text(alloc.studentRollNumber ?: "22CS1034", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Aadhaar Card No.:", fontSize = 12.sp, color = Color.Gray)
+                            Text("673311551269", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Allocated On:", fontSize = 12.sp, color = Color.Gray)
+                            Text(alloc.allocatedAt.take(10), fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Payment History Statement", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Advance Deposit:", fontSize = 11.sp)
+                                    Text("₹5000.00 (VERIFIED)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                                }
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Monthly Fee Rate:", fontSize = 11.sp)
+                                    Text("₹5000.00 / month", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Current Status:", fontSize = 11.sp)
+                                    Text("UP TO DATE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        }
+
+        // Room Details & Beds Modal Dialog (3x3 Grid of Beds)
         if (showRoomDetailsDialog != null) {
             val r = showRoomDetailsDialog!!
             AlertDialog(
@@ -477,125 +752,150 @@ fun RoomManagementScreen(
                         Text("Close")
                     }
                 },
-                title = { Text("Room ${r.roomNumber} Details") },
+                title = { Text("Room ${r.roomNumber} Details & Bed Map") },
                 text = {
                     Column(
                         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                     ) {
-                        Text("Type: ${r.roomType}", fontSize = 14.sp)
-                        Text("Status: ${r.status}", fontSize = 14.sp)
-                        if (!r.notes.isNullOrBlank()) {
-                            Text("Notes: ${r.notes}", fontSize = 12.sp, color = Color.Gray)
-                        }
+                        Text("Type: ${r.roomType} · Capacity: ${r.capacity}", fontSize = 13.sp)
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Visual Bed Map", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Beds Grid (3x3)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         if (beds.isEmpty() && loading) {
                             Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             }
                         } else {
-                            // Large Movie Ticket Style slots in dialog
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                            // 3x3 Movie Ticket Style Bed Slots
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(160.dp)
                             ) {
-                                beds.forEach { bed ->
-                                    val color = when (bed.status) {
-                                        "Available" -> Color(0xFF4CAF50)
-                                        "Occupied" -> Color(0xFFF44336)
-                                        "Maintenance" -> Color(0xFF9E9E9E)
-                                        "Inactive" -> Color(0xFF333333)
-                                        "Reserved" -> Color(0xFF2196F3)
-                                        else -> Color(0xFF9E9E9E)
-                                    }
-                                    val symbol = when (bed.status) {
-                                        "Available" -> "✓"
-                                        "Occupied" -> "●"
-                                        "Maintenance" -> "⚙"
-                                        "Inactive" -> "🚫"
-                                        "Reserved" -> "🔒"
-                                        else -> "?"
-                                    }
+                                items(beds) { bed ->
+                                    val isOcc = bed.status == "Occupied"
+                                    val color = if (isOcc) Color(0xFFF44336) else Color(0xFF4CAF50)
+                                    val symbol = if (isOcc) "● OCCUPIED" else "✓ AVAIL"
+
                                     Box(
                                         modifier = Modifier
-                                            .size(46.dp)
+                                            .fillMaxWidth()
+                                            .height(44.dp)
                                             .background(color.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                                            .border(1.5.dp, color, RoundedCornerShape(8.dp)),
+                                            .border(1.5.dp, color, RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                if (isOcc) {
+                                                    val matchAlloc = allocations.firstOrNull { it.bedId == bed.id }
+                                                    if (matchAlloc != null) {
+                                                        selectedBedDetails = matchAlloc
+                                                    }
+                                                }
+                                            },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(
                                                 text = bed.bedNumber,
-                                                fontSize = 9.sp,
+                                                fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
                                                 text = symbol,
                                                 color = color,
-                                                fontSize = 12.sp,
+                                                fontSize = 8.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
                                 }
                             }
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Beds & Occupants Details", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
+            )
+        }
 
-                            beds.forEach { bed ->
-                                val activeAlloc = allocations.firstOrNull { it.bedId == bed.id && it.status == "Active" }
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column {
-                                            Text(bed.bedNumber, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                            if (activeAlloc != null) {
-                                                Text("Occupant: ${activeAlloc.studentName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                                            } else {
-                                                Text("Status: ${bed.status}", fontSize = 11.sp, color = Color.Gray)
-                                            }
-                                        }
+        // Create Room Dialog
+        if (showAddRoomDialog) {
+            var roomNumber by remember { mutableStateOf("") }
+            var capacityText by remember { mutableStateOf("2") }
+            var selectedRoomType by remember { mutableStateOf("Double Occupancy") }
 
-                                        if (activeAlloc != null) {
-                                            IconButton(
-                                                onClick = {
-                                                    hostelViewModel.vacateRoom(activeAlloc.id) {
-                                                        hostelViewModel.loadAllocations()
-                                                        hostelViewModel.loadRooms(floorId)
-                                                        showRoomDetailsDialog = null
-                                                    }
-                                                }
-                                            ) {
-                                                Icon(Icons.Default.PersonRemove, contentDescription = "Vacate Bed", tint = MaterialTheme.colorScheme.error)
-                                            }
-                                        } else if (bed.status == "Available") {
-                                            Button(
-                                                onClick = {
-                                                    showRoomDetailsDialog = null
-                                                    onNavigateToAllocation(null, bed.id)
-                                                },
-                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                                modifier = Modifier.height(32.dp)
-                                            ) {
-                                                Text("Allocate", fontSize = 12.sp)
-                                            }
-                                        }
-                                    }
+            val types = listOf("Single", "Double Occupancy", "Triple Occupancy", "Dormitory")
+
+            AlertDialog(
+                onDismissRequest = { showAddRoomDialog = false },
+                title = { Text("Add Room to Floor") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = roomNumber,
+                            onValueChange = { roomNumber = it },
+                            label = { Text("Room Number *") },
+                            placeholder = { Text("e.g. 101 or A-102") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = capacityText,
+                            onValueChange = { capacityText = it },
+                            label = { Text("Bed Capacity *") },
+                            placeholder = { Text("2") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text("Room Type:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            types.take(2).forEach { type ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(
+                                        selected = type == selectedRoomType,
+                                        onClick = { selectedRoomType = type }
+                                    )
+                                    Text(type, fontSize = 12.sp)
                                 }
                             }
                         }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            types.drop(2).forEach { type ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(
+                                        selected = type == selectedRoomType,
+                                        onClick = { selectedRoomType = type }
+                                    )
+                                    Text(type, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val cap = capacityText.toIntOrNull() ?: 2
+                            hostelViewModel.createRoom(floorId, roomNumber, cap, selectedRoomType)
+                            showAddRoomDialog = false
+                        },
+                        enabled = roomNumber.isNotBlank()
+                    ) {
+                        Text("Create Room")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddRoomDialog = false }) {
+                        Text("Cancel")
                     }
                 }
             )
@@ -660,7 +960,7 @@ fun RoomAllocationScreen(
                 title = { Text("Allocate Bed Map") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -1027,7 +1327,7 @@ fun RoomAllocationScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Ready to Allocate", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                         }
-                        Divider(modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         
                         SummaryRow("Student", selectedStudent?.profile?.fullName ?: "-")
                         SummaryRow("Hostel", selectedHostel?.name ?: "-")

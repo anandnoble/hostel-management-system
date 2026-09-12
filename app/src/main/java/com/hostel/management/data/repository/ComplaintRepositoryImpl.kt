@@ -1,11 +1,14 @@
 package com.hostel.management.data.repository
 
-import com.hostel.management.data.dto.*
+import com.hostel.management.data.local.AppDatabase
+import com.hostel.management.data.local.entity.ComplaintCommentEntity
+import com.hostel.management.data.local.entity.ComplaintEntity
+import com.hostel.management.data.local.entity.SyncQueueEntity
+import com.hostel.management.data.sync.SyncManager
 import com.hostel.management.domain.model.*
 import com.hostel.management.domain.repository.ComplaintRepository
 import com.hostel.management.di.ServiceLocator
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -15,7 +18,9 @@ import java.util.Locale
 import java.util.UUID
 
 class ComplaintRepositoryImpl(
-    private val supabaseClient: SupabaseClient
+    private val supabaseClient: SupabaseClient,
+    private val db: AppDatabase,
+    private val syncManager: SyncManager
 ) : ComplaintRepository {
 
     override suspend fun getComplaints(
@@ -23,14 +28,22 @@ class ComplaintRepositoryImpl(
         statusFilter: String?,
         categoryFilter: String?
     ): Result<List<Complaint>> = runCatching {
-        var query = supabaseClient.postgrest.from("complaints").select()
-        val listDto = query.decodeList<ComplaintDto>()
-        if (listDto.isEmpty()) return Result.success(emptyList())
+        var listDto = if (studentId != null) {
+            db.complaintDao().getComplaintsForStudent(studentId)
+        } else {
+            db.complaintDao().getAllComplaints()
+        }
+
+        if (listDto.isEmpty()) {
+            syncManager.pullCloudToLocal()
+            listDto = if (studentId != null) {
+                db.complaintDao().getComplaintsForStudent(studentId)
+            } else {
+                db.complaintDao().getAllComplaints()
+            }
+        }
 
         var filtered = listDto
-        if (studentId != null) {
-            filtered = filtered.filter { it.studentId == studentId }
-        }
         if (statusFilter != null) {
             filtered = filtered.filter { it.status == statusFilter }
         }
@@ -38,7 +51,7 @@ class ComplaintRepositoryImpl(
             filtered = filtered.filter { it.category == categoryFilter }
         }
 
-        val studentProfiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
+        val studentProfiles = db.studentDao().getAllStudentProfiles().associateBy { it.id }
 
         filtered.map { dto ->
             val profile = studentProfiles[dto.studentId]
@@ -71,53 +84,90 @@ class ComplaintRepositoryImpl(
 
         var uploadedUrl: String? = null
         if (imageBytes != null) {
-            // Upload to Supabase Storage
-            val fileName = "complaint_${UUID.randomUUID()}.${fileExtension ?: "jpg"}"
-            val bucket = supabaseClient.storage.from("complaints")
-            bucket.upload(fileName, imageBytes, upsert = true)
-            uploadedUrl = bucket.publicUrl(fileName)
+            runCatching {
+                val fileName = "complaint_${UUID.randomUUID()}.${fileExtension ?: "jpg"}"
+                val bucket = supabaseClient.storage.from("complaints")
+                bucket.upload(fileName, imageBytes, upsert = true)
+                uploadedUrl = bucket.publicUrl(fileName)
+            }
         }
 
+        val newId = UUID.randomUUID().toString()
         val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
 
-        val dto = supabaseClient.postgrest.from("complaints").insert(
-            buildJsonObject {
-                put("student_id", student.id)
-                put("category", category)
-                put("title", title)
-                put("description", description)
-                put("priority", priority)
-                if (uploadedUrl != null) put("image_url", uploadedUrl)
-                put("status", "Submitted")
-            }
-        ) { select() }.decodeSingle<ComplaintDto>()
+        val entity = ComplaintEntity(
+            id = newId,
+            studentId = student.id,
+            category = category,
+            title = title,
+            description = description,
+            priority = priority,
+            imageUrl = uploadedUrl,
+            status = "Submitted",
+            createdAt = nowString,
+            updatedAt = nowString
+        )
+
+        db.complaintDao().insertComplaint(entity)
+
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("student_id", student.id)
+            put("category", category)
+            put("title", title)
+            put("description", description)
+            put("priority", priority)
+            if (uploadedUrl != null) put("image_url", uploadedUrl)
+            put("status", "Submitted")
+            put("created_at", nowString)
+            put("updated_at", nowString)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "COMPLAINT",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
 
         Complaint(
-            id = dto.id,
-            studentId = dto.studentId,
+            id = newId,
+            studentId = student.id,
             studentName = student.fullName,
-            category = dto.category,
-            title = dto.title,
-            description = dto.description,
-            priority = dto.priority,
-            imageUrl = dto.imageUrl,
-            status = dto.status,
-            createdAt = dto.createdAt,
-            updatedAt = dto.updatedAt
+            category = category,
+            title = title,
+            description = description,
+            priority = priority,
+            imageUrl = uploadedUrl,
+            status = "Submitted",
+            createdAt = nowString,
+            updatedAt = nowString
         )
     }
 
     override suspend fun updateComplaintStatus(complaintId: String, status: String): Result<Unit> = runCatching {
         val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
+        db.complaintDao().updateComplaintStatus(complaintId, status, nowString)
 
-        supabaseClient.postgrest.from("complaints").update(
-            buildJsonObject {
-                put("status", status)
-                put("updated_at", nowString)
-            }
-        ) {
-            filter { eq("id", complaintId) }
-        }
+        val payload = buildJsonObject {
+            put("status", status)
+            put("updated_at", nowString)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "COMPLAINT",
+                entityId = complaintId,
+                action = "UPDATE",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun assignComplaint(
@@ -125,27 +175,17 @@ class ComplaintRepositoryImpl(
         staffId: String,
         notes: String?
     ): Result<Unit> = runCatching {
-        // Create complaint assignment
-        supabaseClient.postgrest.from("complaint_assignments").insert(
-            buildJsonObject {
-                put("complaint_id", complaintId)
-                put("staff_id", staffId)
-                if (notes != null) put("notes", notes)
-            }
-        )
-
-        // Update status of complaint to Assigned
         updateComplaintStatus(complaintId, "Assigned").getOrThrow()
     }
 
     override suspend fun getComplaintComments(complaintId: String): Result<List<ComplaintComment>> = runCatching {
-        val listDto = supabaseClient.postgrest.from("complaint_comments").select {
-            filter { eq("complaint_id", complaintId) }
-        }.decodeList<ComplaintCommentDto>()
+        var listDto = db.complaintDao().getCommentsForComplaint(complaintId)
+        if (listDto.isEmpty()) {
+            syncManager.pullCloudToLocal()
+            listDto = db.complaintDao().getCommentsForComplaint(complaintId)
+        }
 
-        if (listDto.isEmpty()) return Result.success(emptyList())
-
-        val profiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
+        val profiles = db.studentDao().getAllStudentProfiles().associateBy { it.id }
 
         listDto.map { dto ->
             val profile = profiles[dto.userId]
@@ -172,28 +212,56 @@ class ComplaintRepositoryImpl(
 
         var uploadedUrl: String? = null
         if (imageBytes != null) {
-            val fileName = "comment_${UUID.randomUUID()}.${fileExtension ?: "jpg"}"
-            val bucket = supabaseClient.storage.from("complaints")
-            bucket.upload(fileName, imageBytes, upsert = true)
-            uploadedUrl = bucket.publicUrl(fileName)
+            runCatching {
+                val fileName = "comment_${UUID.randomUUID()}.${fileExtension ?: "jpg"}"
+                val bucket = supabaseClient.storage.from("complaints")
+                bucket.upload(fileName, imageBytes, upsert = true)
+                uploadedUrl = bucket.publicUrl(fileName)
+            }
         }
 
-        supabaseClient.postgrest.from("complaint_comments").insert(
-            buildJsonObject {
-                put("complaint_id", complaintId)
-                put("user_id", user.id)
-                put("comment", comment)
-                if (uploadedUrl != null) put("image_url", uploadedUrl)
-            }
+        val newId = UUID.randomUUID().toString()
+        val nowString = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZZZZZ", Locale.US).format(Date())
+
+        val entity = ComplaintCommentEntity(
+            id = newId,
+            complaintId = complaintId,
+            userId = user.id,
+            comment = comment,
+            imageUrl = uploadedUrl,
+            createdAt = nowString
         )
+
+        db.complaintDao().insertComment(entity)
+
+        val payload = buildJsonObject {
+            put("id", newId)
+            put("complaint_id", complaintId)
+            put("user_id", user.id)
+            put("comment", comment)
+            if (uploadedUrl != null) put("image_url", uploadedUrl)
+            put("created_at", nowString)
+        }.toString()
+
+        db.syncQueueDao().enqueueSyncItem(
+            SyncQueueEntity(
+                entityType = "COMPLAINT_COMMENT",
+                entityId = newId,
+                action = "INSERT",
+                payloadJson = payload
+            )
+        )
+
+        syncManager.triggerAutoSyncIfEnabled()
     }
 
     override suspend fun getMaintenanceStaffList(): Result<List<Profile>> = runCatching {
-        supabaseClient.postgrest.from("profiles").select {
-            filter {
-                eq("role", "MAINTENANCE_STAFF")
-            }
-        }.decodeList<ProfileDto>().map { dto ->
+        var staff = db.complaintDao().getMaintenanceStaff()
+        if (staff.isEmpty()) {
+            syncManager.pullCloudToLocal()
+            staff = db.complaintDao().getMaintenanceStaff()
+        }
+        staff.map { dto ->
             Profile(
                 id = dto.id,
                 organizationId = dto.organizationId,
@@ -206,36 +274,6 @@ class ComplaintRepositoryImpl(
         }
     }
 
-    override suspend fun getAssignedComplaints(staffId: String): Result<List<Complaint>> = runCatching {
-        val assignments = supabaseClient.postgrest.from("complaint_assignments").select {
-            filter {
-                eq("staff_id", staffId)
-            }
-        }.decodeList<ComplaintAssignmentDto>()
-
-        if (assignments.isEmpty()) return Result.success(emptyList())
-
-        val complaintIds = assignments.map { it.complaintId }
-        val allComplaints = supabaseClient.postgrest.from("complaints").select().decodeList<ComplaintDto>()
-        
-        val filtered = allComplaints.filter { it.id in complaintIds }
-        val studentProfiles = supabaseClient.postgrest.from("profiles").select().decodeList<ProfileDto>().associateBy { it.id }
-
-        filtered.map { dto ->
-            val profile = studentProfiles[dto.studentId]
-            Complaint(
-                id = dto.id,
-                studentId = dto.studentId,
-                studentName = profile?.fullName,
-                category = dto.category,
-                title = dto.title,
-                description = dto.description,
-                priority = dto.priority,
-                imageUrl = dto.imageUrl,
-                status = dto.status,
-                createdAt = dto.createdAt,
-                updatedAt = dto.updatedAt
-            )
-        }
-    }
+    override suspend fun getAssignedComplaints(staffId: String): Result<List<Complaint>> =
+        getComplaints(studentId = null, statusFilter = "Assigned", categoryFilter = null)
 }

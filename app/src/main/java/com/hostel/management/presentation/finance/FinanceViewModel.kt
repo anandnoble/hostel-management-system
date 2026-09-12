@@ -117,6 +117,51 @@ class FinanceViewModel(
         }
     }
 
+    fun recordPaymentForMonth(
+        studentId: String,
+        month: String,
+        amount: Double,
+        paymentMethod: String,
+        notes: String?,
+        onSuccess: () -> Unit
+    ) {
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            val invoicesResult = financeRepository.getFeeInvoices(studentId, month)
+            var invoiceId: String? = null
+            
+            if (invoicesResult.isSuccess) {
+                val invoices = invoicesResult.getOrNull() ?: emptyList()
+                val existingInvoice = invoices.find { it.billingMonth == month }
+                
+                if (existingInvoice != null) {
+                    invoiceId = existingInvoice.id
+                } else {
+                    _error.value = "No invoice generated for $month. Generate invoices first."
+                    _loading.value = false
+                    return@launch
+                }
+            } else {
+                _error.value = "Failed to verify invoice"
+                _loading.value = false
+                return@launch
+            }
+
+            if (invoiceId != null) {
+                financeRepository.recordPayment(studentId, invoiceId, amount, paymentMethod, null, notes)
+                    .onSuccess {
+                        _loading.value = false
+                        onSuccess()
+                    }
+                    .onFailure { err ->
+                        _error.value = err.localizedMessage ?: "Payment failed"
+                        _loading.value = false
+                    }
+            }
+        }
+    }
+
     fun clearError() {
         _error.value = null
     }

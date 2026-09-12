@@ -12,3 +12,9 @@ local.properties
 /android-sdk/
 /gradle/
 /*.zip
+*.log
+*.tmp
+*.exe
+.wrangler/
+supabase/.temp/
+logcat*.txt
