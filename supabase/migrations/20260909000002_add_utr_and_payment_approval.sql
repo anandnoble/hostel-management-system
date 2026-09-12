@@ -8,7 +8,7 @@ ALTER TABLE public.student_self_registrations
     ADD COLUMN IF NOT EXISTS utr_number text,
     ADD COLUMN IF NOT EXISTS amount_paid numeric(10,2) DEFAULT 0.0;
 
--- 2. Enhanced SECURITY DEFINER RPC to approve registration with payment options & create corresponding invoice/payment
+-- 2. Enhanced SECURITY DEFINER RPC to approve registration with payment options & create corresponding fee_invoice/payment
 CREATE OR REPLACE FUNCTION approve_student_self_registration(
     p_reg_id text,
     p_status text DEFAULT 'Approved',
@@ -49,7 +49,7 @@ BEGIN
         amount_paid = COALESCE(NULLIF(p_amount_paid, 0), amount_paid, 0.0)
     WHERE id = v_reg.id;
 
-    -- If approved, perform real bed allocation AND create invoice/payment record
+    -- If approved, perform real bed allocation AND create fee_invoice/payment record
     IF p_status = 'Approved' THEN
         v_bed_id := v_reg.preferred_bed_id;
         v_hostel_id := v_reg.hostel_id;
@@ -86,7 +86,7 @@ BEGIN
 
         -- Ensure student record exists
         INSERT INTO public.students (id, student_id_number, aadhaar_number, hostel_status)
-        VALUES (v_profile_id, v_reg.student_id_number, v_reg.aadhaar_number, 'Active')
+        VALUES (v_profile_id, v_reg.student_id_number, v_reg.aadhaar_number, 'Active'::public.hostel_status)
         ON CONFLICT (id) DO NOTHING;
 
         -- Mark bed as Occupied & insert allocation
@@ -103,16 +103,16 @@ BEGIN
         -- Create Fee Invoice & Payment for this student
         v_invoice_id := uuid_generate_v4();
         IF p_payment_status = 'Paid' THEN
-            INSERT INTO public.invoices (id, student_id, billing_month, amount, balance, payment_status, due_date)
-            VALUES (v_invoice_id, v_profile_id, to_char(now(), 'FMMonth YYYY'), v_final_amount, 0.00, 'Paid', CURRENT_DATE)
+            INSERT INTO public.fee_invoices (id, student_id, billing_month, amount, amount_paid, balance, payment_status, due_date)
+            VALUES (v_invoice_id, v_profile_id, to_char(now(), 'FMMonth YYYY'), v_final_amount, v_final_amount, 0.00, 'Paid'::public.payment_status, CURRENT_DATE)
             ON CONFLICT DO NOTHING;
 
-            INSERT INTO public.payments (invoice_id, amount_paid, payment_mode, notes)
-            VALUES (v_invoice_id, v_final_amount, 'UPI', 'Registration Advance Payment (Verified UTR: ' || COALESCE(v_reg.utr_number, 'Verified') || ')')
+            INSERT INTO public.payments (student_id, fee_invoice_id, amount, payment_method, notes)
+            VALUES (v_profile_id, v_invoice_id, v_final_amount, 'UPI'::public.payment_method, 'Registration Advance Payment (Verified UTR: ' || COALESCE(v_reg.utr_number, 'Verified') || ')')
             ON CONFLICT DO NOTHING;
         ELSE
-            INSERT INTO public.invoices (id, student_id, billing_month, amount, balance, payment_status, due_date)
-            VALUES (v_invoice_id, v_profile_id, to_char(now(), 'FMMonth YYYY'), v_final_amount, v_final_amount, 'Pending', CURRENT_DATE)
+            INSERT INTO public.fee_invoices (id, student_id, billing_month, amount, amount_paid, balance, payment_status, due_date)
+            VALUES (v_invoice_id, v_profile_id, to_char(now(), 'FMMonth YYYY'), v_final_amount, 0.00, v_final_amount, 'Pending'::public.payment_status, CURRENT_DATE)
             ON CONFLICT DO NOTHING;
         END IF;
     END IF;
@@ -129,7 +129,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION approve_student_self_registration(text, text, text, numeric) TO anon, authenticated, service_role;
 
--- 3. Automatic Backfill: Create Paid invoices for all past approved students missing an invoice
+-- 3. Automatic Backfill: Create Paid fee_invoices for all past approved students missing an invoice
 DO $$
 DECLARE
     r record;
@@ -138,16 +138,16 @@ BEGIN
     FOR r IN 
         SELECT DISTINCT ra.student_id 
         FROM public.room_allocations ra
-        LEFT JOIN public.invoices i ON i.student_id = ra.student_id
-        WHERE ra.status = 'Active' AND i.id IS NULL
+        LEFT JOIN public.fee_invoices fi ON fi.student_id = ra.student_id
+        WHERE ra.status = 'Active' AND fi.id IS NULL
     LOOP
         v_new_inv_id := uuid_generate_v4();
-        INSERT INTO public.invoices (id, student_id, billing_month, amount, balance, payment_status, due_date)
-        VALUES (v_new_inv_id, r.student_id, to_char(now(), 'FMMonth YYYY'), 5000.00, 0.00, 'Paid', CURRENT_DATE)
+        INSERT INTO public.fee_invoices (id, student_id, billing_month, amount, amount_paid, balance, payment_status, due_date)
+        VALUES (v_new_inv_id, r.student_id, to_char(now(), 'FMMonth YYYY'), 5000.00, 5000.00, 0.00, 'Paid'::public.payment_status, CURRENT_DATE)
         ON CONFLICT DO NOTHING;
 
-        INSERT INTO public.payments (invoice_id, amount_paid, payment_mode, notes)
-        VALUES (v_new_inv_id, 5000.00, 'UPI', 'Initial Registration Fee (Auto Backfilled)')
+        INSERT INTO public.payments (student_id, fee_invoice_id, amount, payment_method, notes)
+        VALUES (r.student_id, v_new_inv_id, 5000.00, 'UPI'::public.payment_method, 'Initial Registration Fee (Auto Backfilled)')
         ON CONFLICT DO NOTHING;
     END LOOP;
 END $$;
