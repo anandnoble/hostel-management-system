@@ -956,16 +956,22 @@ fun Hostel2DView(
                         items(beds.size) { index ->
                             val bed = beds[index]
                             
-                            val allocation = allocations.find { it.bedId == bed.id && it.status == "Active" }
-                            val isAvailable = allocation == null
+                            val allocation = allocations.find { it.bedId.equals(bed.id, ignoreCase = true) && it.status.equals("Active", ignoreCase = true) }
+                            val isOccupied = bed.status.equals("Occupied", ignoreCase = true) || allocation != null
                             
                             var bedColor = Color(0xFF2196F3) // BLUE
                             var statusText = "AVAILABLE"
                             var assignedStudentId = allocation?.studentId
                             
-                            if (!isAvailable && assignedStudentId != null) {
-                                val studentInvoices = invoices.filter { it.studentId == assignedStudentId }
-                                val hasPending = studentInvoices.any { it.paymentStatus != "Paid" && it.paymentStatus != "Waived" }
+                            if (isOccupied) {
+                                val studentInvoices = if (assignedStudentId != null) {
+                                    invoices.filter { it.studentId.equals(assignedStudentId, ignoreCase = true) }
+                                } else emptyList()
+
+                                val hasPending = studentInvoices.any { 
+                                    it.paymentStatus.equals("Pending", ignoreCase = true) || it.paymentStatus.equals("Overdue", ignoreCase = true) 
+                                }
+
                                 if (hasPending) {
                                     bedColor = Color(0xFFF44336) // RED
                                     statusText = "! NOT PAID"
@@ -978,7 +984,7 @@ fun Hostel2DView(
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.clickable {
-                                    if (!isAvailable && assignedStudentId != null) {
+                                    if (isOccupied && assignedStudentId != null) {
                                         onBedClick(assignedStudentId)
                                     }
                                 }

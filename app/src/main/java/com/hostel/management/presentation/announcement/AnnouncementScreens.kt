@@ -325,6 +325,8 @@ fun AnnouncementsScreen(
 fun NotificationsScreen(
     announcementViewModel: AnnouncementViewModel,
     studentViewModel: com.hostel.management.presentation.student.StudentViewModel? = null,
+    hostelViewModel: com.hostel.management.presentation.hostel.HostelViewModel? = null,
+    financeViewModel: com.hostel.management.presentation.finance.FinanceViewModel? = null,
     onNavigateBack: () -> Unit
 ) {
     val notifications by announcementViewModel.notifications.collectAsState()
@@ -514,7 +516,13 @@ fun NotificationsScreen(
                                 Button(
                                     onClick = {
                                         val amt = manualAmountText.toDoubleOrNull() ?: 5000.0
-                                        studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved", paymentStatus = "Paid", amountPaid = amt)
+                                        studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved", paymentStatus = "Paid", amountPaid = amt) {
+                                            hostelViewModel?.loadAllocations()
+                                            financeViewModel?.loadInvoices()
+                                            hostelViewModel?.hostels?.value?.firstOrNull()?.id?.let { hostelId ->
+                                                hostelViewModel.loadFullHostelMap(hostelId)
+                                            }
+                                        }
                                         selectedPaidRegistration = null
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
@@ -558,7 +566,13 @@ fun NotificationsScreen(
                                 Button(
                                     onClick = {
                                         val amt = manualAmountText.toDoubleOrNull() ?: 0.0
-                                        studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved", paymentStatus = "Pending", amountPaid = amt)
+                                        studentViewModel?.updateSelfRegistrationStatus(reg.id, "Approved", paymentStatus = "Pending", amountPaid = amt) {
+                                            hostelViewModel?.loadAllocations()
+                                            financeViewModel?.loadInvoices()
+                                            hostelViewModel?.hostels?.value?.firstOrNull()?.id?.let { hostelId ->
+                                                hostelViewModel.loadFullHostelMap(hostelId)
+                                            }
+                                        }
                                         selectedUnpaidRegistration = null
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))

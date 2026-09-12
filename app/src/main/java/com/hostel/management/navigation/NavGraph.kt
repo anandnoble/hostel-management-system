@@ -469,6 +469,8 @@ fun NavGraph(
             NotificationsScreen(
                 announcementViewModel = announcementViewModel,
                 studentViewModel = studentViewModel,
+                hostelViewModel = hostelViewModel,
+                financeViewModel = financeViewModel,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

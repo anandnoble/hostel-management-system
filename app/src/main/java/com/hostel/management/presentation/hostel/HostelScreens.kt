@@ -776,9 +776,10 @@ fun RoomManagementScreen(
                                 modifier = Modifier.fillMaxWidth().height(160.dp)
                             ) {
                                 items(beds) { bed ->
-                                    val isOcc = bed.status == "Occupied"
-                                    val color = if (isOcc) Color(0xFFF44336) else Color(0xFF4CAF50)
-                                    val symbol = if (isOcc) "● OCCUPIED" else "✓ AVAIL"
+                                    val matchAlloc = allocations.firstOrNull { it.bedId.equals(bed.id, ignoreCase = true) && it.status.equals("Active", ignoreCase = true) }
+                                    val isOcc = bed.status.equals("Occupied", ignoreCase = true) || matchAlloc != null
+                                    val color = if (isOcc) Color(0xFF4CAF50) else Color(0xFF2196F3)
+                                    val symbol = if (isOcc) "✓ PAID" else "✓ AVAIL"
 
                                     Box(
                                         modifier = Modifier
